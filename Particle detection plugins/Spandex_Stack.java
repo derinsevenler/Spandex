@@ -28,6 +28,7 @@ import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import ij.process.ImageStatistics;
 import ij.process.ShortProcessor;
+import ij.plugin.ImageCalculator;
 
 
 public class Spandex_Stack implements PlugIn {
@@ -43,10 +44,10 @@ public class Spandex_Stack implements PlugIn {
 	private int zSize;
 
 	private ImagePlus rawImgPlus;
-	private ImageStack rawImgStack;
+	private ImagePlus nirImagePlus;
 
-	private ShortProcessor maxVals;
-	private ShortProcessor minVals;
+	private FloatProcessor maxVals;
+	private FloatProcessor minVals;
 	private FloatProcessor maxIdx;
 	private FloatProcessor minIdx;
 	private FloatProcessor nirs;
@@ -64,14 +65,13 @@ public class Spandex_Stack implements PlugIn {
 	public void run(String arg) {
 		if (showDialog()) {
 			rawImgPlus = IJ.getImage();
-			rawImgStack = rawImgPlus.getStack();
 			imWidth = rawImgPlus.getWidth();
 			imHeight = rawImgPlus.getHeight();
 			zSize = rawImgPlus.getNSlices();
 			
 			// makeSIMask(rawImgStack.getProcessor(1));
-			performMedianFiltering();
-			findKeyPoints(rawImgStack);
+			nirImagePlus = performPreProcessing();
+			findKeyPoints(nirImagePlus.getStack());
 			filterKeyPoints();
 			displayResults();
 			
@@ -97,35 +97,60 @@ public class Spandex_Stack implements PlugIn {
 	// 	}
 	// }
 
-	private void performMedianFiltering(){
+	private ImagePlus performPreProcessing(){
+		// Perform filtering and smoothing on the stack to reduce shot noise and illumination gradients.
+		// We are basically making the image into NI by subtracting and then dividing by E_ref
+		
+		// medianImage is essentially our estimate for E_ref
+		ImagePlus medianImage = rawImgPlus.duplicate();
+		medianImage.setTitle("Background Image");
 		// Uses the 'Fast Filters' plugin
-		int kernelSize = (int)(Math.round(10*sigma));
-		IJ.run(rawImgPlus, "Fast Filters", "link filter=mean x=" + kernelSize + " y=" + kernelSize + " preprocessing=none subtract offset=32768 stack");
+		int kernelSize = (int)(Math.round(20*sigma));
+		// int imgMean = (int)(Math.round(rawImgPlus.getProcessor().getStatistics().mean));
+		IJ.run(medianImage, "Fast Filters", "link filter=mean x=" + kernelSize + " y=" + kernelSize + " preprocessing=none stack");
+		
+		// Subtract medianImage from original
+		ImageCalculator ic = new ImageCalculator();
+		ImagePlus diffImage = ic.run("Subtract create 32-bit stack", rawImgPlus, medianImage);
+		diffImage.setTitle("Difference image");
+		
+		// Divide by the medianImage to get niImg
+		// Convert from 16-bit unsigned int to float
+		// medianImage.setProcessor(medianImage.getProcessor().convertToFloat());
+		ImagePlus niImg = ic.run("Divide create 32-bit stack", diffImage, medianImage);
+		niImg.setTitle("Normalized intensity image");
+
+		// Perform smoothing.
+		// Convolution with the correct kernel does not effect peak amplitude but reduces noise
+		IJ.run(niImg, "Gaussian Blur 3D...", "x=" + sigma + " y=" + sigma + " z=1");
 		if (showIntermediateImages){
-			rawImgPlus.show();
+			medianImage.show();
+			diffImage.show();
+			niImg.show();
 		}
+		return niImg;
 	}
 
 	private void findKeyPoints(ImageStack imageStack){
 		// Find the min and max values and indices
 
 
-		maxVals = (ShortProcessor) imageStack.getProcessor(1).duplicate();
-		short[] maxValPixs = (short[]) maxVals.getPixels();
-		minVals = (ShortProcessor) imageStack.getProcessor(1).duplicate();
-		short[] minValPixs = (short[]) minVals.getPixels();
+		maxVals = (FloatProcessor) imageStack.getProcessor(1).duplicate();
+		float[] maxValPixs = (float[]) maxVals.getPixels();
+		minVals = (FloatProcessor) imageStack.getProcessor(1).duplicate();
+		float[] minValPixs = (float[]) minVals.getPixels();
 		maxIdx = new FloatProcessor(imWidth, imHeight);
 		float[] maxIdxPixs = (float[]) maxIdx.getPixels();
 		minIdx = new FloatProcessor(imWidth, imHeight);
 		float[] minIdxPixs = (float[]) minIdx.getPixels();
 		for (int idz = 1; idz<zSize; idz++){
 			ImageProcessor thisSlice = imageStack.getProcessor(idz+1);
-			short[] thisSlicePixs = (short[]) thisSlice.getPixels();
+			float[] thisSlicePixs = (float[]) thisSlice.getPixels();
 			for (int idx = 0; idx<thisSlicePixs.length; idx++){
-				if ((thisSlicePixs[idx]&0xffff) > (maxValPixs[idx]&0xffff)){
+				if ((thisSlicePixs[idx]) > (maxValPixs[idx])){
 					maxValPixs[idx] = thisSlicePixs[idx];
 					maxIdxPixs[idx] = idz;
-				} else if ((thisSlicePixs[idx]&0xffff) < (minValPixs[idx]&0xffff)){
+				} else if ((thisSlicePixs[idx]) < (minValPixs[idx])){
 					minValPixs[idx] = thisSlicePixs[idx];
 					minIdxPixs[idx] = idz;
 				}
@@ -139,30 +164,16 @@ public class Spandex_Stack implements PlugIn {
 		pps = new FloatProcessor(imWidth, imHeight);
 		float[] nirPixs = (float[]) nirs.getPixels();
 		for (int idx = 0; idx<maxValPixs.length; idx++){
-			nirPixs[idx] = ((float)(maxValPixs[idx]&0xffff) - (float)(minValPixs[idx]&0xffff));
-			
-			// IJ.showProgress(idx, maxValPixs.length);
+			nirPixs[idx] = ((float)(maxValPixs[idx]) - (float)(minValPixs[idx]));
 		}
-//		ImagePlus thingy1 = new ImagePlus("Normalized Intensity Range", maxVals);
-//		thingy1.show();
-//		ImagePlus thingy2 = new ImagePlus("Normalized Intensity Range", minVals);
-//		thingy2.show();
 		ImagePlus nirPlus = new ImagePlus("Normalized Intensity Range", nirs);
 
-		// Perform Gaussian smoothing
-		if (showIntermediateImages){
-			ImagePlus preBlur = nirPlus.duplicate();
-			preBlur.setTitle("Normalized Intensity Range");
-			preBlur.show();
-		}
-		IJ.run(nirPlus,"Gaussian Blur...", "sigma=" + sigma);
 		if (showIntermediateImages){
 			ImagePlus postBlur = nirPlus.duplicate();
-			postBlur.setTitle("NIR after blurring by sigma");
 			postBlur.show();
 		}
 		// Perform thresholding and get keypoints
-		IJ.setThreshold(nirPlus, (int) particleThreshold, 900000);
+		IJ.setThreshold(nirPlus, particleThreshold, 1);
 		IJ.run(nirPlus,"Make Binary","");
 		IJ.run(nirPlus,"Analyze Particles...", "size=0-200 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
 		if (showIntermediateImages){
@@ -232,7 +243,7 @@ public class Spandex_Stack implements PlugIn {
 
 		// default value is 0.00, 2 digits right of the decimal point
 		gd.addNumericField("Sigma: decrease for small particles", 1.5, 1);
-		gd.addNumericField("Particle threshold: decrease for dim particles", 850, 0);
+		gd.addNumericField("Particle threshold: decrease for dim particles", .05, 3);
 		gd.addNumericField("Bare silicon region threshold: increase for dirty chips (?)", 1.3, 1);
 		gd.addCheckbox("Show intermediate images", false);
 
