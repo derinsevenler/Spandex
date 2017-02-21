@@ -40,7 +40,7 @@ gd.addStringField("Save Directory:",saveDir, 30);
 gd.addStringField("Chip Name","chip" ,15); 
 gd.addMessage("");
 gd.addNumericField("Total experiment time (minutes)", 20,1);
-gd.addNumericField("Time between datapoints (>20 seconds)", 30,1);
+gd.addNumericField("Time between measurements ( at least 30 seconds)", 30,1);
 
 gd.addMessage("");
 gd.addNumericField("Exposure time",initExp, 2);
@@ -62,7 +62,7 @@ return false;
 saveDir = gd.getNextString();
 saveFname = gd.getNextString();
 experimentTimeMinutes = gd.getNextNumber();
-deltaTMinutes = gd.getNextNumber();
+deltaTSeconds = gd.getNextNumber();
 exposureTime = gd.getNextNumber();
 objLongName = gd.getNextRadioButton();
 immersionMedia = gd.getNextRadioButton(); 
@@ -144,6 +144,7 @@ bitDepth = mmc.getImageBitDepth();
 // https://www.osapublishing.org/DirectPDFAccess/CBFDD7A6-CFCA-4615-F9FDFC8F5F00205C_207144/oe-18-24-24461.pdf
 // THIS COEFFICIENT IS A PLACEHOLDER
 illumLambdaNm = 660.0; // in nanometers
+pixelSizeUm = mmc.getPixelSizeUm();
 kernelSigma = 0.25*objNA/(illumLambdaNm/1000*pixelSizeUm); // kernel sigma is in units of *pixels*
 kernelSigma = Math.round(kernelSigma*100.0)/100.0;
 
@@ -164,14 +165,19 @@ if (!f.exists()){
 FileOutputStream fos = new FileOutputStream(f);
 BufferedWriter particleXYBuffer = new BufferedWriter(new OutputStreamWriter(fos));
 
-int[] desiredStartTime = new int[];
+desiredNumFrames = Math.ceil(experimentTimeMinutes*60/deltaTSeconds);
+double[] desiredStartTimeSeconds = new double[desiredNumFrames];
+for(int x=0; x<desiredNumFrames; x++){
+	desiredStartTimeSeconds[x] = deltaTSeconds*x;
+}
 
 // ---------------------------------------------------------------------------------
 // PERFORM ACQUISITION
 // ---------------------------------------------------------------------------------
 
 IJ.log("Scanning the region for nanoparticles...");
-f = new File(saveDir + saveFname + "_particleXY_ " + frameIdx + ".txt");
+
+f = new File(saveDir + saveFname + "_times.txt");
 if (!f.exists()){
 	f.createNewFile();
 }
@@ -182,26 +188,28 @@ exptRunning = true;
 frameIdx = 0;
 
 while (exptRunning){
-	frameIdx +=1;
-
-	curTime = System.currentTimeMillis();
-	while (curTime < desiredStartTime[frameIdx]){
+	curTimeSeconds = (System.currentTimeMillis()/1000.0) - (t0ms/1000.0);
+	while (curTimeSeconds < desiredStartTimeSeconds[frameIdx]){
 		// wait in 100 ms intervals. If we are late, start immediately.
-		mmc.sleep(100); 
+		mmc.sleep(100);
+		IJ.log("Current time is " + curTimeSeconds);
+		curTimeSeconds = (System.currentTimeMillis()/1000.0) - (t0ms/1000.0);
 	}
 	startTimeMs = System.currentTimeMillis();
-	timeBuffer.write("" + frameIdx + ", " + Math.round((startTimeMs-t0ms)/1000));
+	timeBuffer.write("" + frameIdx + ", " + Math.round((startTimeMs-t0ms)/1000.0));
 	timeBuffer.newLine();
-	
+
+	frameIdx +=1;
+
 	// Acquire and save preview image
 	mmc.waitForSystem();
 	image = mm.live().snap(false).get(0);
 	ip = mm.data().ij().createProcessor(image).bin(5);
 	imp = new ImagePlus(saveDir, ip);
-	IJ.run(imp,"Fast Filters", "link filter=median x=15 y=15 preprocessing=none subtract offset=256");
-	IJ.run(imp,"8-bit");
-	FileSaver fs = new FileSaver(finalImp);
-	fs.saveAsTiff(saveDir + saveFname + "_preview_image_" + frameIdx ".tif");
+	IJ.run(imp,"Fast Filters", "link filter=median x=15 y=15 preprocessing=none subtract offset=32768");
+	// IJ.run(imp,"8-bit", "");
+	FileSaver fs = new FileSaver(imp);
+	fs.saveAsTiff(saveDir + saveFname + "_preview_image_" + frameIdx + ".tif");
 
 	// Acquire a z-stack
 	ImageStack thisZStack = new ImageStack((int)imWidth, (int)imHeight, (int)nZPos);
@@ -232,7 +240,7 @@ while (exptRunning){
 	FileOutputStream fos = new FileOutputStream(f);
 	BufferedWriter particleXYBuffer = new BufferedWriter(new OutputStreamWriter(fos));
 	for (k=0; k<xPos.length; k+=1){
-		particleXYBuffer.write( IJ.d2s(xPos[k]*pixelSizeUm-(thisX-startX),3) + ", " + IJ.d2s(-yPos[k]*pixelSizeUm+(thisY-startY),3));
+		particleXYBuffer.write( IJ.d2s(xPos[k]*pixelSizeUm,3) + ", " + IJ.d2s(-yPos[k]*pixelSizeUm,3));
 		particleXYBuffer.newLine();
 	}
 	particleXYBuffer.close();
@@ -241,10 +249,14 @@ while (exptRunning){
 	IJ.selectWindow("Results");
 	IJ.run("Close");
 	
-	// Update the display
+	// Update the display & figure out if the experiment is over
 	finishTimeMs = System.currentTimeMillis();
-	exptRunning = (((finishTimeMs-t0ms)*1000*60) < experimentTimeMinutes);
-	IJ.log("Acquired " + frameIdx + " timepoints in " + (finishTimeMs-t0ms)*1000*60 + " minutes...");
+	exptRunning = (((finishTimeMs-t0ms)/60000.0) < experimentTimeMinutes);
+
+	IJ.log("Acquired " + frameIdx + " timepoints in " + Math.round((finishTimeMs-t0ms)/6000)/10 + " minutes...");
 }
+timeBuffer.close();
+fos.close();
+System.gc();
 
 IJ.log("Scan complete.\nPreview images saved as \n" + saveDir + saveFname + "_preview_image.tif \nParticle positions saved in \n" + saveDir + saveFname + "_particleXY.txt");
