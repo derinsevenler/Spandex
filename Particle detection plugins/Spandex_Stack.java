@@ -107,7 +107,7 @@ public class Spandex_Stack implements PlugIn {
 		// Uses the 'Fast Filters' plugin
 		int kernelSize = (int)(Math.round(20*sigma));
 		// int imgMean = (int)(Math.round(rawImgPlus.getProcessor().getStatistics().mean));
-		IJ.run(medianImage, "Fast Filters", "link filter=mean x=" + kernelSize + " y=" + kernelSize + " preprocessing=none stack");
+		IJ.run(medianImage, "Fast Filters", "link filter=median x=" + kernelSize + " y=" + kernelSize + " preprocessing=none stack");
 		
 		// Subtract medianImage from original
 		ImageCalculator ic = new ImageCalculator();
@@ -169,8 +169,8 @@ public class Spandex_Stack implements PlugIn {
 		ImagePlus nirPlus = new ImagePlus("Normalized Intensity Range", nirs);
 
 		if (showIntermediateImages){
-			ImagePlus postBlur = nirPlus.duplicate();
-			postBlur.show();
+			ImagePlus nirShow = nirPlus.duplicate();
+			nirShow.show();
 		}
 		// Perform thresholding and get keypoints
 		IJ.setThreshold(nirPlus, particleThreshold, 1);

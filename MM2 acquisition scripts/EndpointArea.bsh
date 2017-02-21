@@ -158,7 +158,7 @@ kernelSigma = 0.25*objNA/(illumLambdaNm/1000*pixelSizeUm); // kernel sigma is in
 kernelSigma = Math.round(kernelSigma*100.0)/100.0;
 
 // THIS COEFFICIENT IS ALSO A PLACEHOLDER
-particleBrightnessThreshold = 1500;
+particleBrightnessThreshold = .02;
 
 mm.live().setLiveMode(false);
 mm.acquisitions().clearRunnables();
