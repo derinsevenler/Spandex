@@ -253,7 +253,7 @@ while (exptRunning){
 	finishTimeMs = System.currentTimeMillis();
 	exptRunning = (((finishTimeMs-t0ms)/60000.0) < experimentTimeMinutes);
 
-	IJ.log("Acquired " + frameIdx + " timepoints in " + Math.round((finishTimeMs-t0ms)/6000)/10 + " minutes...");
+	IJ.log("Acquired " + frameIdx + " timepoints in " + Math.round((finishTimeMs-t0ms)/6000.0)/10.0 + " minutes...");
 }
 timeBuffer.close();
 fos.close();
