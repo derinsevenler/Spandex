@@ -242,7 +242,7 @@ public class Spandex_Stack implements PlugIn {
 		GenericDialog gd = new GenericDialog("WELCOME TO SPANDEX");
 
 		// default value is 0.00, 2 digits right of the decimal point
-		gd.addNumericField("Sigma: decrease for small particles", 1.5, 1);
+		gd.addNumericField("Sigma: decrease for small particles", 2, 1);
 		gd.addNumericField("Particle threshold: decrease for dim particles", .05, 3);
 		gd.addNumericField("Bare silicon region threshold: increase for dirty chips (?)", 1.3, 1);
 		gd.addCheckbox("Show intermediate images", false);
