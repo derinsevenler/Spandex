@@ -158,7 +158,7 @@ kernelSigma = 0.25*objNA/(illumLambdaNm/1000*pixelSizeUm); // kernel sigma is in
 kernelSigma = Math.round(kernelSigma*100.0)/100.0;
 
 // THIS COEFFICIENT IS ALSO A PLACEHOLDER
-particleBrightnessThreshold = .02;
+particleBrightnessThreshold = .03;
 
 mm.live().setLiveMode(false);
 mm.acquisitions().clearRunnables();
@@ -260,8 +260,8 @@ for (int idx=0; idx<nPosX; idx++){
 		image = mm.live().snap(false).get(0);
 		ip = mm.data().ij().createProcessor(image).bin(5);
 		imp = new ImagePlus(saveDir, ip);
-		IJ.run(imp,"Fast Filters", "link filter=median x=15 y=15 preprocessing=none subtract offset=256");
-		IJ.run(imp,"8-bit");
+		IJ.run(imp,"Fast Filters", "link filter=median x=15 y=15 preprocessing=none subtract offset=32768");
+		IJ.run(imp,"8-bit","");
 		// imp.show();
 		// Add this to the preview slice
 		if (idy == 0) {
