@@ -224,11 +224,14 @@ while (exptRunning){
 	}
 	mmc.stopSequenceAcquisition();
 	burstImp = disp.getImagePlus();
+
 	// burstImp = mm.displays().createDisplay(store).getImagePlus();
 
 	// Count particles
 	// ImagePlus stackPlus = new ImagePlus("current Z stack", thisZStack);
 	IJ.run(burstImp,"Spandex Flicker", "sigma=" + kernelSigma + " particle=" + particleBrightnessThreshold + " bare=" + 1.3);
+	
+	disp.forceClosed();
 	
 	// Save Particle Positions
 	IJ.renameResults("Particle Results","Results");

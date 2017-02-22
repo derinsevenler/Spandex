@@ -107,7 +107,7 @@ public class Spandex_Flicker implements PlugIn {
 		// Perform smoothing.
 		// Convolution with the correct kernel does not effect peak amplitude but reduces noise
 		// Unlike Spandex_Stack, we want to blur in 2D not 3D
-		IJ.run(niImg, "Gaussian Blur 3D...", "x=" + sigma + " y=" + sigma + " z=1");
+		IJ.run(niImg, "Gaussian Blur...", "sigma=" + sigma + " stack");
 		if (showIntermediateImages){
 			medianImage.show();
 			diffImage.show();
