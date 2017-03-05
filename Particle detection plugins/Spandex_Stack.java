@@ -31,7 +31,7 @@ import ij.process.ShortProcessor;//16 bit unsigned image and methods for it
 import ij.plugin.ImageCalculator;//implements Process/Image Calculator Commands
 
 
-public class Spandex_Stack implements PlugIn {
+public class Spandex_stack implements PlugIn {
 	protected ImagePlus image;
 	// image property members
 	private double sigma;
@@ -57,11 +57,11 @@ public class Spandex_Stack implements PlugIn {
 	private double[] yPos;
 	private List<Double> xPosFiltered;
 	private List<Double> yPosFiltered;
+	private boolean isParticle=true; // true if particle is found o.w. false
 
 	// private ImageProcessor siMask;
 	private float[] particleXY;
 
-	@Override
 	public void run(String arg) {
 		if (showDialog()) {
 			//acquire relevant image data
@@ -69,13 +69,18 @@ public class Spandex_Stack implements PlugIn {
 			imWidth = rawImgPlus.getWidth();
 			imHeight = rawImgPlus.getHeight();
 			zSize = rawImgPlus.getNSlices();
+<<<<<<< HEAD
 			
 			//process using classes below
+=======
+>>>>>>> refs/remotes/origin/master
 			// makeSIMask(rawImgStack.getProcessor(1));
 			nirImagePlus = performPreProcessing();
 			findKeyPoints(nirImagePlus.getStack());
+			if(isParticle){
 			filterKeyPoints();
 			displayResults();
+			}
 			
 		}
 
@@ -162,6 +167,10 @@ public class Spandex_Stack implements PlugIn {
 			IJ.showProgress((idz+1),zSize);
 		}
 		
+<<<<<<< HEAD
+=======
+
+>>>>>>> refs/remotes/origin/master
 		// Calculate the NIR and PPS
 		nirs = new FloatProcessor(imWidth, imHeight); //FloatProcessor is an empty array
 		pps = new FloatProcessor(imWidth, imHeight);
@@ -175,6 +184,7 @@ public class Spandex_Stack implements PlugIn {
 			ImagePlus nirShow = nirPlus.duplicate();
 			nirShow.show();
 		}
+
 		// Perform thresholding and get keypoints
 		IJ.setThreshold(nirPlus, particleThreshold, 1);
 		IJ.run(nirPlus,"Make Binary",""); //array of ones and zeros based on threshold setting
@@ -183,12 +193,22 @@ public class Spandex_Stack implements PlugIn {
 			nirPlus.setTitle("Keypoints");
 			nirPlus.show();
 		}
+	
 		ResultsTable resultsTable = ResultsTable.getResultsTable();
+		
 
 		int xCol = resultsTable.getColumnIndex("XStart");
+		if(xCol==resultsTable.COLUMN_NOT_FOUND){
+			isParticle=false;
+			IJ.error("No particle is found");
+			return;
+		}
+
 		int yCol =  resultsTable.getColumnIndex("YStart");
+
 		xPos = resultsTable.getColumnAsDoubles(xCol);
 		yPos = resultsTable.getColumnAsDoubles(yCol);
+		
 		if (!showIntermediateImages){
 			IJ.selectWindow("Results");
 			IJ.run("Close");
@@ -217,7 +237,6 @@ public class Spandex_Stack implements PlugIn {
 
 	private void displayResults(){
 		int nParticles = xPosFiltered.size();
-		
 		// Create an overlay to show particles
 		Overlay particleOverlay = new Overlay();
 		for (int n = 0; n<nParticles; n++){
