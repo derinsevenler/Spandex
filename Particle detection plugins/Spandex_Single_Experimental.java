@@ -63,6 +63,7 @@ public class Spandex_Single_Experimental implements PlugIn
 	private double[] yPos;
 	private List<Double> xPosFiltered;
 	private List<Double> yPosFiltered;
+	private boolean isParticle=true;
 
 	private float[] particleXY;
 
@@ -79,8 +80,11 @@ public class Spandex_Single_Experimental implements PlugIn
 			//process using classes below
 			nirImagePlus = performPreProcessing();
 			findKeyPoints(nirImagePlus);
-			filterKeyPoints();
-			displayResults();
+			if(isParticle)
+			{
+				filterKeyPoints();
+				displayResults();
+			}
 			
 		}
 
@@ -126,7 +130,6 @@ public class Spandex_Single_Experimental implements PlugIn
 
 	private void findKeyPoints(ImagePlus imagePro)
 	{
-
 		// Perform thresholding and get keypoints
 		IJ.setThreshold(imagePro, particleThreshold, 1);
 		IJ.run(imagePro,"Make Binary",""); //array of ones and zeros based on threshold setting
@@ -139,6 +142,12 @@ public class Spandex_Single_Experimental implements PlugIn
 		ResultsTable resultsTable = ResultsTable.getResultsTable();
 
 		int xCol = resultsTable.getColumnIndex("XStart");
+			if(xCol==resultsTable.COLUMN_NOT_FOUND)
+			{
+				isParticle=false;
+				IJ.error("No particle is found");
+				return;
+			}
 		int yCol =  resultsTable.getColumnIndex("YStart");
 		xPos = resultsTable.getColumnAsDoubles(xCol);
 		yPos = resultsTable.getColumnAsDoubles(yCol);
@@ -172,41 +181,32 @@ public class Spandex_Single_Experimental implements PlugIn
 
 	private void displayResults()
 	{
-		if(xPosFiltered.isEmpty())
+		int nParticles = xPosFiltered.size();
+		
+		// Create an overlay to show particles
+		Overlay particleOverlay = new Overlay();
+		for (int n = 0; n<nParticles; n++)
 		{
-			GenericDialog no_res = new GenericDialog("No Particles Detected in Selected Image");
-			no_res.showDialog();
+			Roi thisParticle = new OvalRoi(xPosFiltered.get(n)-4, yPosFiltered.get(n)-4, 16, 16);
+			thisParticle.setStrokeColor(Color.red);
+			particleOverlay.add(thisParticle);
 		}
-		else
+		rawImgPlus.setOverlay(particleOverlay);
+		IJ.run(rawImgPlus,"Enhance Contrast", "saturated=0.4");
+
+		// create a resultsTable and put it in the resultsWindow
+		ResultsTable resultsTable = new ResultsTable();
+		for (int n = 0; n<nParticles; n++)
 		{
-
-			int nParticles = xPosFiltered.size();
-			
-			// Create an overlay to show particles
-			Overlay particleOverlay = new Overlay();
-			for (int n = 0; n<nParticles; n++)
-			{
-				Roi thisParticle = new OvalRoi(xPosFiltered.get(n)-4, yPosFiltered.get(n)-4, 16, 16);
-				thisParticle.setStrokeColor(Color.red);
-				particleOverlay.add(thisParticle);
-			}
-			rawImgPlus.setOverlay(particleOverlay);
-			IJ.run(rawImgPlus,"Enhance Contrast", "saturated=0.4");
-
-			// create a resultsTable and put it in the resultsWindow
-			ResultsTable resultsTable = new ResultsTable();
-			for (int n = 0; n<nParticles; n++)
-			{
-				resultsTable.setValue("x", n, xPosFiltered.get(n));
-				resultsTable.setValue("y", n, yPosFiltered.get(n));
-			}
-			resultsTable.show("Particle Results");
-			// Create a dialog summary
-			// GenericDialog gd = new GenericDialog("SPANDEX RESULTS");
-			// gd.addMessage("Total particles in this image: " + nParticles);
-			// gd.showDialog();
+			resultsTable.setValue("x", n, xPosFiltered.get(n));
+			resultsTable.setValue("y", n, yPosFiltered.get(n));
 		}
-	}
+		resultsTable.show("Particle Results");
+		// Create a dialog summary
+		// GenericDialog gd = new GenericDialog("SPANDEX RESULTS");
+		// gd.addMessage("Total particles in this image: " + nParticles);
+		// gd.showDialog();
+}
 
 	private boolean showDialog() 
 	{
