@@ -42,7 +42,8 @@ public class Spandex_Single_Experimental implements PlugIn
 	// image property members
 	private double sigma;
 	private boolean showIntermediateImages;
-	private double particleThreshold;
+	private double thresholdMax;
+	private double thresholdMin;
 	private double siThreshold;
 	private String arg;
 	private int imWidth;
@@ -131,7 +132,7 @@ public class Spandex_Single_Experimental implements PlugIn
 	private void findKeyPoints(ImagePlus imagePro)
 	{
 		// Perform thresholding and get keypoints
-		IJ.setThreshold(imagePro, particleThreshold, 1);
+		IJ.setThreshold(imagePro, thresholdMin, thresholdMax);
 		IJ.run(imagePro,"Make Binary",""); //array of ones and zeros based on threshold setting
 		IJ.run(imagePro,"Analyze Particles...", "size=0-200 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
 		if (showIntermediateImages)
@@ -214,7 +215,8 @@ public class Spandex_Single_Experimental implements PlugIn
 
 		// default value is 0.00, 2 digits right of the decimal point
 		gd.addNumericField("Sigma: decrease for small particles", 2, 1);
-		gd.addNumericField("Particle threshold: decrease for dim particles", .05, 3);
+		gd.addNumericField("Image Threshold minimum: decrease for dim particles", .05, 3);
+		gd.addNumericField("Particle threshold maximum: decrease if prominent noise, or bare si", 1.0, 3);
 		gd.addNumericField("Bare silicon region threshold: increase for dirty chips (?)", 1.3, 1);
 		gd.addCheckbox("Show intermediate images", false);
 
@@ -223,7 +225,8 @@ public class Spandex_Single_Experimental implements PlugIn
 
 		// get entered values
 		sigma = gd.getNextNumber();
-		particleThreshold = gd.getNextNumber();
+		thresholdMin = gd.getNextNumber();
+		thresholdMax = gd.getNextNumber();
 		siThreshold = gd.getNextNumber();
 		showIntermediateImages = gd.getNextBoolean();
 		return true;

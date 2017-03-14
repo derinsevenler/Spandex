@@ -63,6 +63,7 @@ public class Spandex_Single_V1 implements PlugIn
 	private double[] yPos;
 	private List<Double> xPosFiltered;
 	private List<Double> yPosFiltered;
+	private boolean isParticle=true;
 
 	private float[] particleXY;
 
@@ -79,8 +80,11 @@ public class Spandex_Single_V1 implements PlugIn
 			//process using classes below
 			nirImagePlus = performPreProcessing();
 			findKeyPoints(nirImagePlus);
-			filterKeyPoints();
-			displayResults();
+			if(isParticle)
+			{
+				filterKeyPoints();
+				displayResults();
+			}
 			
 		}
 
@@ -139,6 +143,12 @@ public class Spandex_Single_V1 implements PlugIn
 		ResultsTable resultsTable = ResultsTable.getResultsTable();
 
 		int xCol = resultsTable.getColumnIndex("XStart");
+		if(xCol==resultsTable.COLUMN_NOT_FOUND)
+			{
+				isParticle=false;
+				IJ.error("No particle is found");
+				return;
+			}
 		int yCol =  resultsTable.getColumnIndex("YStart");
 		xPos = resultsTable.getColumnAsDoubles(xCol);
 		yPos = resultsTable.getColumnAsDoubles(yCol);
