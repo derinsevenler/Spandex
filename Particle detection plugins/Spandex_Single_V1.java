@@ -118,7 +118,7 @@ public class Spandex_Single_V1 implements PlugIn
 
 		// Perform smoothing.
 		// Convolution with the correct kernel does not effect peak amplitude but reduces noise
-		IJ.run(niImg, "Gaussian Blur 3D...", "x=" + sigma + " y=" + sigma + " z=1");
+		IJ.run(niImg, "Gaussian Blur...", "x=" + sigma + " y=" + sigma);
 		if (showIntermediateImages)
 		{
 			medianImage.show();
