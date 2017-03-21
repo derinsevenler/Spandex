@@ -140,7 +140,6 @@ public class Spandex_Single_Experimental implements PlugIn
 		//there are dim particles of interest as well as bright
 		if(negCon)
 		{
-			//duplicates image since we need to do 2 thresholdings (above and below background)
 			ImagePlus negImage = imagePro.duplicate();
 			IJ.setThreshold(negImage, -1*thresholdMax, -1*thresholdMin);
 			IJ.run(negImage,"Make Binary",""); //array of ones and zeros based on threshold setting
@@ -150,23 +149,16 @@ public class Spandex_Single_Experimental implements PlugIn
 				negImage.setTitle("Dim Keypoints");
 				negImage.show();
 			}
-			//generating a results table is the easiest way of collecting and organizing all the results. 
 			ResultsTable resultsTable = ResultsTable.getResultsTable();
 
 			int xCol = resultsTable.getColumnIndex("XStart");
 			if(xCol==resultsTable.COLUMN_NOT_FOUND)
-			{
-				noDark = true;
-			}
-			//since we're not ending the code if just one condition reads zero, the else loop is just a safty
-			else
-			{
-				//these lines take the info from the results table and saves each array
-				int yCol =  resultsTable.getColumnIndex("YStart");
-				xPosdim = resultsTable.getColumnAsDoubles(xCol);
-				yPosdim = resultsTable.getColumnAsDoubles(yCol);
-			}
-
+				{
+					noDark = true;
+				}
+			int yCol =  resultsTable.getColumnIndex("YStart");
+			xPosdim = resultsTable.getColumnAsDoubles(xCol);
+			yPosdim = resultsTable.getColumnAsDoubles(yCol);
 			if (!showIntermediateImages)
 			{
 				IJ.selectWindow("Results");
@@ -175,14 +167,13 @@ public class Spandex_Single_Experimental implements PlugIn
 				IJ.run("Close");
 			}
 		}
-		//these conditions allow the code to execute properly if you decide you're not looking for any dark particles
 		else
 		{
 			noDark = true;
 			xPosdim = new double[0];
 			yPosdim = new double[0];
 		}
-		//end of dark particle analysis
+
 
 		// Perform thresholding and get keypoints above background noise
 		IJ.setThreshold(imagePro, thresholdMin, thresholdMax);
@@ -194,29 +185,18 @@ public class Spandex_Single_Experimental implements PlugIn
 			imagePro.show();
 		}
 		ResultsTable resultsTable2 = ResultsTable.getResultsTable();
-		int xCol = resultsTable2.getColumnIndex("XStart");
-		//if both dim and bright particles are not found, ends the code
-		if(xCol==resultsTable2.COLUMN_NOT_FOUND && noDark)
-		{
-			isParticle=false;
-			IJ.error("No particle detected");
-			return;
-		}
-		//foreseeably, we could analyze an image with just dark particles- this will prevent it from breaking if no bright particles found
-		if(xCol==resultsTable2.COLUMN_NOT_FOUND)
-		{
-			xPosbright = new double[0];
-			yPosbright = new double[0];
-		}
-		//normal condition
-		else
-		{
-			int yCol =  resultsTable2.getColumnIndex("YStart");
-			xPosbright = resultsTable2.getColumnAsDoubles(xCol);
-			yPosbright = resultsTable2.getColumnAsDoubles(yCol);
-		}
 
-		if (!showIntermediateImages && isParticle == true)
+		int xCol = resultsTable2.getColumnIndex("XStart");
+			if(xCol==resultsTable2.COLUMN_NOT_FOUND && noDark)
+			{
+				isParticle=false;
+				IJ.error("No particle is found");
+				return;
+			}
+		int yCol =  resultsTable2.getColumnIndex("YStart");
+		xPosbright = resultsTable2.getColumnAsDoubles(xCol);
+		yPosbright = resultsTable2.getColumnAsDoubles(yCol);
+		if (!showIntermediateImages)
 		{
 			IJ.selectWindow("Results");
 			IJ.run("Close");
@@ -224,15 +204,17 @@ public class Spandex_Single_Experimental implements PlugIn
 			IJ.run("Close");
 		}
 		
-		//combines arrays derived from results tables
-		// we need to pre-allocate the memory for the array to copy correctly (can't propegate a null object)
-		xnetResults = new double [xPosbright.length + xPosdim.length];
-		System.arraycopy(xPosbright, 0, xnetResults, 0, xPosbright.length);
-		System.arraycopy(xPosdim, 0, xnetResults, xPosbright.length, xPosdim.length);
+	//combines arrays derived from results tables
+	//double[] xnetResults = new double [xPosbright.length + xPosdim.length];
+	// we need to pre-allocate the memory for the array to copy correctly (can't propegate a null object)
+	xnetResults = new double [xPosbright.length + xPosdim.length];
+	System.arraycopy(xPosbright, 0, xnetResults, 0, xPosbright.length);
+	System.arraycopy(xPosdim, 0, xnetResults, xPosbright.length, xPosdim.length);
 
-		ynetResults = new double [yPosbright.length + yPosdim.length];
-		System.arraycopy(yPosbright, 0, ynetResults, 0, yPosbright.length);
-		System.arraycopy(yPosdim, 0, ynetResults, yPosbright.length, yPosdim.length);
+	//double[] ynetResults = new double [yPosbright.length + yPosdim.length];
+	ynetResults = new double [yPosbright.length + yPosdim.length];
+	System.arraycopy(yPosbright, 0, ynetResults, 0, yPosbright.length);
+	System.arraycopy(yPosdim, 0, ynetResults, yPosbright.length, yPosdim.length);
 
 	}
 
