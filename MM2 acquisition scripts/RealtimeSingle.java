@@ -1,0 +1,258 @@
+import ij.gui.*; 
+import ij.IJ;
+import ij.Menus;
+import ij.io.*;
+import ij.plugin.*;
+import ij.*;
+import java.lang.System;
+import ij.measure.ResultsTable;
+
+initExp = mmc.getExposure();
+
+dirSelect = new DirectoryChooser("Choose the save directory:");
+dirSelect.setDefaultDirectory("D:\\User_Scratch");
+saveDir = dirSelect.getDirectory();
+
+String[] objectiveArray = new String[4]; 
+objectiveArray[0]="10x   "; 
+objectiveArray[1]="20x   "; 
+objectiveArray[2]="40x   "; 
+objectiveArray[3]="50x   ";
+String[] mediaArray = new String[2]; 
+mediaArray[0]="dry   "; 
+mediaArray[1]="wet   "; 
+String[] npArray = new String[2]; 
+npArray[0]="bio-nps   "; 
+npArray[1]="nanorod   ";
+
+GenericDialog gd = new GenericDialog("Realtime Single-FOV Particle Counting");
+
+//second parameter is default, last parameter is expected length
+gd.addStringField("Save Directory:",saveDir, 30);
+gd.addStringField("Chip Name","chip" ,15); 
+gd.addMessage("");
+gd.addNumericField("Total experiment time (minutes)", 20,1);
+gd.addNumericField("Time between measurements ( at least 30 seconds)", 30,1);
+
+gd.addMessage("");
+gd.addNumericField("Exposure time",initExp, 2);
+gd.addMessage("");
+
+//checks micromanager to see what objective is currently selected
+curObj = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
+//this allows you to chose between all objective options, including the one you have selected if it doesn't exist
+gd.addRadioButtonGroup("Select the Objective",objectiveArray,1,4, curObj + "   "); 
+gd.addMessage("");
+gd.addRadioButtonGroup("Select media",mediaArray,1,2,"wet   "); 
+gd.addMessage("");
+gd.addRadioButtonGroup("Nanoparticle",npArray,1,3,"nanorod   "); 
+
+
+gd.showDialog(); 
+//if they exited the dialogue dox, it cancels the code
+if (gd.wasCanceled()) 
+return false; 
+
+// Get Inputs
+saveDir = gd.getNextString();
+saveFname = gd.getNextString();
+experimentTimeMinutes = gd.getNextNumber();
+deltaTSeconds = gd.getNextNumber();
+exposureTime = gd.getNextNumber();
+objLongName = gd.getNextRadioButton();
+immersionMedia = gd.getNextRadioButton(); 
+nanoparticle = gd.getNextRadioButton(); 
+
+
+
+
+// Figure out the correct polarizer settings
+// For viruses, do not use polarization
+linPol1 = 0;
+// These must be initialized outside the conditional for proper scope
+//qwp = quarter wave plate
+qwp1 = 0; qwp2 = 0; linPol2 = 0;
+if (nanoparticle.equals("bio-nps   "))
+{ 
+	// turn polarization off
+	qwp1 = 354;
+	qwp2 = 351;
+	linPol2 = 0;
+} else { // we are looking at nanorods
+	qwp1 = 38;
+	qwp2 = 40;
+	linPol2 = 80;
+}
+//tells user what settings are optimal
+GenericDialog gd2 = new GenericDialog("Polarizer settings");
+gd2.addMessage("Move and focus on the region-of-interest.");
+gd2.addMessage("Set the polarization optics: " + linPol1 + " (Left-most), " + qwp1 + " (second on left), " + qwp2 + " (lower on right), " +  linPol2 + " (upper on right).");
+gd2.showDialog();
+if (gd2.wasCanceled())
+	return false;
+
+combiner = new StackCombiner();
+ic = new ImageCalculator();
+
+// Set the z-stack properties depending on the objective
+// Note that properties scale roughly with the NA, not the magnification
+// Note that the media is not considered here BUT IT SHOULD BE
+// THESE ARE PLACEHOLDERS
+zStackWidthUm = 0;zStepUm = 0.0;objNA = 0.0;objMag = 0;
+switch (objLongName.substring(0,3)) 
+{
+	case "10x":
+		objNA = 0.3;
+		objMag = 10;
+		break;
+	case "20x":
+		objNA = 0.45;
+		objMag = 20;
+		break;
+	case "40x":
+		objNA = 0.9;
+		objMag = 40;
+		break;
+	case "50x":
+		objNA = 0.8;
+		objMag = 50;
+		break;
+}
+// nZPos = Math.ceil(zStackWidthUm/zStepUm);
+// thisZ = mmc.getPosition();
+// zStart = thisZ-zStackWidthUm/2;
+
+
+// Set microscope configuration and get image scale factors
+mm.setExposure(exposureTime);
+mmc.setConfig("Objective",objLongName.substring(0,3));
+imWidth = mmc.getImageWidth();
+imHeight = mmc.getImageHeight();
+bitDepth = mmc.getImageBitDepth();
+
+// Set up the kernel for spatial filtering
+// https://www.osapublishing.org/DirectPDFAccess/CBFDD7A6-CFCA-4615-F9FDFC8F5F00205C_207144/oe-18-24-24461.pdf
+// THIS COEFFICIENT IS A PLACEHOLDER
+illumLambdaNm = 660.0; // in nanometers
+pixelSizeUm = mmc.getPixelSizeUm();
+kernelSigma = 0.25*objNA/(illumLambdaNm/1000*pixelSizeUm); // kernel sigma is in units of *pixels*
+kernelSigma = Math.round(kernelSigma*100.0)/100.0;
+
+// THIS COEFFICIENT IS ALSO A PLACEHOLDER
+particleBrightnessThreshold = .02;
+
+//turn off live before commencing with aquisition
+mm.live().setLiveMode(false);
+mm.acquisitions().clearRunnables();
+
+// Set the detection threshold and configure the frame averaging pipeline based on the particles
+mm.data().clearPipeline();
+
+// prepare particle position list
+f = new File(saveDir + saveFname + "_particleXY.txt");
+if (!f.exists())
+{
+	f.createNewFile();
+}
+FileOutputStream fos = new FileOutputStream(f);
+BufferedWriter particleXYBuffer = new BufferedWriter(new OutputStreamWriter(fos));
+
+desiredNumFrames = Math.ceil(experimentTimeMinutes*60/deltaTSeconds);
+double[] desiredStartTimeSeconds = new double[desiredNumFrames];
+for(int x=0; x<desiredNumFrames; x++)
+{
+	desiredStartTimeSeconds[x] = deltaTSeconds*x;
+}
+
+
+
+
+
+IJ.log("Scanning the region for nanoparticles...");
+
+f = new File(saveDir + saveFname + "_times.txt");
+if (!f.exists
+{
+	f.createNewFile();
+}
+FileOutputStream timeFos = new FileOutputStream(f);
+BufferedWriter timeBuffer = new BufferedWriter(new OutputStreamWriter(timeFos));
+t0ms = System.currentTimeMillis();
+exptRunning = true;
+frameIdx = 0;
+
+while (exptRunning)
+{
+	curTimeSeconds = (System.currentTimeMillis()/1000.0) - (t0ms/1000.0);
+	while (curTimeSeconds < desiredStartTimeSeconds[frameIdx])
+	{
+		// wait in 100 ms intervals. If we are late, start immediately.
+		mmc.sleep(100);
+		IJ.log("Current time is " + curTimeSeconds);
+		curTimeSeconds = (System.currentTimeMillis()/1000.0) - (t0ms/1000.0);
+	}
+	startTimeMs = System.currentTimeMillis();
+	timeBuffer.write("" + frameIdx + ", " + Math.round((startTimeMs-t0ms)/1000.0));
+	timeBuffer.newLine();
+
+	frameIdx +=1;
+
+	// Acquire and save preview image
+	mmc.waitForSystem();
+	image = mm.live().snap(false).get(0);
+	//not binning as in reducing resolution of the camera to send less data, but this term is used loosely here
+	//to represent reducing each dimension of an image by, in this case 5 (ie 25 pixels averaged into one)
+	//This image is just a preview so we don't want to save more data than neccisary
+	ip = mm.data().ij().createProcessor(image).bin(5);
+	imp = new ImagePlus(saveDir, ip);
+	IJ.run(imp,"Fast Filters", "link filter=median x=15 y=15 preprocessing=none subtract offset=32768");
+	// IJ.run(imp,"8-bit", "");
+	FileSaver fs = new FileSaver(imp);
+	fs.saveAsTiff(saveDir + saveFname + "_preview_image_" + frameIdx + ".tif");
+
+	// Acquire a z-stack
+	ImagePlus thisImage = new ImagePlus((int)imWidth, (int)imHeight);
+	image = mm.live().snap(false).get(0);
+	mmc.setPosition(thisImage);
+
+	// Count particles
+	ImagePlus stackPlus = new ImagePlus("current Z stack", thisZStack);
+	IJ.run(stackPlus,"Spandex Single", "sigma=" + kernelSigma + " particle=" + particleBrightnessThreshold + " bare=" + 1.3);
+	
+	// Save Particle Positions
+	IJ.renameResults("Particle Results","Results");
+	resultsTable = ResultsTable.getResultsTable();
+	xCol =  resultsTable.getColumnIndex("x");
+	yCol =  resultsTable.getColumnIndex("y");
+	xPos = resultsTable.getColumnAsDoubles(xCol);
+	yPos = resultsTable.getColumnAsDoubles(yCol);
+	
+	f = new File(saveDir + saveFname + "_particleXY_ " + frameIdx + ".txt");
+	if (!f.exists())
+	{
+		f.createNewFile();
+	}
+	FileOutputStream fos = new FileOutputStream(f);
+	BufferedWriter particleXYBuffer = new BufferedWriter(new OutputStreamWriter(fos));
+	for (k=0; k<xPos.length; k+=1)
+	{
+		particleXYBuffer.write( IJ.d2s(xPos[k]*pixelSizeUm,3) + ", " + IJ.d2s(-yPos[k]*pixelSizeUm,3));
+		particleXYBuffer.newLine();
+	}
+	particleXYBuffer.close();
+	fos.close();
+	System.gc();
+	IJ.selectWindow("Results");
+	IJ.run("Close");
+	
+	// Update the display & figure out if the experiment is over
+	finishTimeMs = System.currentTimeMillis();
+	exptRunning = (((finishTimeMs-t0ms)/60000.0) < experimentTimeMinutes);
+
+	IJ.log("Acquired " + frameIdx + " timepoints in " + Math.round((finishTimeMs-t0ms)/6000.0)/10.0 + " minutes...");
+}
+timeBuffer.close();
+fos.close();
+System.gc();
+
+IJ.log("Scan complete.\nPreview images saved as \n" + saveDir + saveFname + "_preview_image.tif \nParticle positions saved in \n" + saveDir + saveFname + "_particleXY.txt");
