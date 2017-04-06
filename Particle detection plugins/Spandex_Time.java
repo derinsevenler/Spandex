@@ -15,6 +15,7 @@
 import java.awt.Color; 
 import java.util.ArrayList;
 import java.util.List;
+import java.lang.Integer;
 
 import ij.IJ;
 import ij.ImageJ; 
@@ -35,8 +36,8 @@ import ij.process.ImageProcessor;
 import ij.process.ImageStatistics;
 import ij.process.ShortProcessor;
 import ij.plugin.ImageCalculator;
-
-//NOTE: This version of Spandex Single is my test bench. I will save all milestone, functioning versions as Spand_Single_VX
+//IJ.log('s')
+//IJ.setLocation(x,y) w/ screenWidth, screenHeight
 public class Spandex_Time implements PlugIn 
 {
 	protected ImagePlus image;
@@ -54,6 +55,7 @@ public class Spandex_Time implements PlugIn
 	private int imWidth;
 	private int imHeight;
 	private int zSize;
+	private int nFrames;
 
 	private ImagePlus rawImgPlus;
 	private ImagePlus nirImagePlus;
@@ -73,6 +75,7 @@ public class Spandex_Time implements PlugIn
 	private double[] ynetResults;
 	private double[] timeStamps;
 	private double[] totalParticles;
+	private int [] characteristics;
 	private List<Double> xPosFiltered;
 	private List<Double> yPosFiltered;
 	private boolean isParticle=true;
@@ -88,9 +91,14 @@ public class Spandex_Time implements PlugIn
 		{
 			//acquire relevant image data
 			rawImgPlus = IJ.getImage();
-			imWidth = rawImgPlus.getWidth();
-			imHeight = rawImgPlus.getHeight();
-			zSize = rawImgPlus.getNSlices();
+			//get dimensions returns an array of width, height, channel #, zSlice # and Frame #
+			characteristics = rawImgPlus.getDimensions();
+			imWidth = characteristics[0];
+			imHeight = characteristics[1];
+			zSize = characteristics[3];
+			nFrames = characteristics[4];
+			//we had a problem where our data would save frames instead of zSlices, so the code now checks both and assumes the larger number indicates how the images are saved.
+			if(nFrames > zSize) zSize = nFrames;
 			totalParticles = new double [zSize];
 			timeStamps = new double [zSize];
 
@@ -115,10 +123,7 @@ public class Spandex_Time implements PlugIn
 				counter++;
 			}
 			displayResults();
-			
-			
 		}
-
 	}
 
 
