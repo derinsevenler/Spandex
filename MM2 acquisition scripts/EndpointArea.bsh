@@ -111,8 +111,8 @@ dark_image = "D:/User_Scratch/Derin/easyIRIS/mirror files/darkImg_easyIRIS.tif";
 zStackWidthUm = 0;zStepUm = 0.0;objNA = 0.0;objMag = 0;
 switch (objLongName.substring(0,3)) {
 	case "10x":
-		zStackWidthUm = 80;
-		zStepUm = 5;
+		zStackWidthUm = 48;
+		zStepUm = 3;
 		objNA = 0.3;
 		objMag = 10;
 		break;
