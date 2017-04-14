@@ -82,13 +82,13 @@ linPol1 = 0;
 qwp1 = 0; qwp2 = 0; linPol2 = 0;
 if (nanoparticle.equals("bio-nps   ")){ 
 	// turn polarization off
-	qwp1 = 354;
+	qwp1 = 60;
 	qwp2 = 351;
 	linPol2 = 0;
 } else { // we are looking at nanorods
-	qwp1 = 38;
+	qwp1 = 15;
 	qwp2 = 40;
-	linPol2 = 80;
+	linPol2 = 60;
 }
 GenericDialog gd2 = new GenericDialog("Endpoint Whole Area Particle Counting");
 gd2.addMessage("Move and focus at the top-left corner of scan region.");
@@ -99,6 +99,8 @@ if (gd2.wasCanceled())
 
 combiner = new StackCombiner();
 ic = new ImageCalculator();
+// zProjector = new ZProjector();
+// zProjector.setMethod(0);
 
 dark_image = "D:/User_Scratch/Derin/easyIRIS/mirror files/darkImg_easyIRIS.tif";
 
@@ -109,14 +111,14 @@ dark_image = "D:/User_Scratch/Derin/easyIRIS/mirror files/darkImg_easyIRIS.tif";
 zStackWidthUm = 0;zStepUm = 0.0;objNA = 0.0;objMag = 0;
 switch (objLongName.substring(0,3)) {
 	case "10x":
-		zStackWidthUm = 24;
-		zStepUm = .8;
+		zStackWidthUm = 80;
+		zStepUm = 5;
 		objNA = 0.3;
 		objMag = 10;
 		break;
 	case "20x":
-		zStackWidthUm = 16;
-		zStepUm = .5;
+		zStackWidthUm = 24;
+		zStepUm = 1.5;
 		objNA = 0.45;
 		objMag = 20;
 		break;
@@ -158,13 +160,15 @@ kernelSigma = 0.25*objNA/(illumLambdaNm/1000*pixelSizeUm); // kernel sigma is in
 kernelSigma = Math.round(kernelSigma*100.0)/100.0;
 
 // THIS COEFFICIENT IS ALSO A PLACEHOLDER
-particleBrightnessThreshold = .03;
+particleBrightnessThreshold = .05;
 
 mm.live().setLiveMode(false);
 mm.acquisitions().clearRunnables();
 
 // Set the detection threshold and configure the frame averaging pipeline based on the particles
-mm.data().clearPipeline();
+burstFrameNo = 16; // frames to average at each z-position
+
+// mm.data().clearPipeline();
 // rods flicker in liquid so we do not average frames for them.
 // For all other cases we need to set up the pipeline.
 // if (!(nanoparticle.equals("nanorod   ") && immersionMedia.equals("wet   "))){
@@ -231,6 +235,8 @@ mmc.setXYPosition(startX-1000.0*fieldSizeXmm, startY-1000.0*fieldSizeYmm);
 // af.fullFocus();
 botRightZ = mmc.getPosition();
 
+mmc.setXYPosition(startX,startY);
+Thread.sleep(10000);
 
 // ---------------------------------------------------------------------------------
 // SCANNING
@@ -252,11 +258,14 @@ for (int idx=0; idx<nPosX; idx++){
 		// Move in X,Y,Z
 		mmc.setXYPosition(thisX, thisY);
 		mmc.setPosition(thisZ);
-		mmc.sleep(1000);
+		Thread.sleep(1000);
 		
 
 		// Create Preview -------------------------------------------
 		mmc.waitForSystem();
+		mm.acquisitions().clearRunnables();
+		mmc.waitForSystem();
+
 		image = mm.live().snap(false).get(0);
 		ip = mm.data().ij().createProcessor(image).bin(5);
 		imp = new ImagePlus(saveDir, ip);
@@ -277,15 +286,59 @@ for (int idx=0; idx<nPosX; idx++){
 		for (int zidx=0; zidx< nZPos; zidx++) {
 			mmc.setPosition(zStart+zidx*zStepUm);
 			mmc.waitForSystem();
-			image = mm.live().snap(false).get(0);
-			thisZStack.setPixels(image.getRawPixels(), zidx+1);
+
+			// image = mm.live().snap(false).get(0);
+			// thisZStack.setPixels(image.getRawPixels(), zidx+1);
+
+			// Acquire a burst of images
+			exposureMs = mmc.getExposure();
+			// Create a Datastore for the images to be stored in, in RAM.
+			store = mm.data().createRAMDatastore();
+			// disp = mm.displays().createDisplay(store);
+			mmc.startContinuousSequenceAcquisition(0);
+			// Set up a Coords.CoordsBuilder for applying coordinates to each image.
+			builder = mm.data().getCoordsBuilder().z(0).channel(0).stagePosition(0);
+			int curFrame = 0;
+			while ( curFrame < burstFrameNo ){
+			// while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
+			   if (mmc.getRemainingImageCount() > 0) {
+			      tagged = mmc.popNextTaggedImage();
+			      // Convert to an Image at the desired timepoint.
+			      image = mm.data().convertTaggedImage(tagged,
+			         builder.time(curFrame).build(), null);
+			      store.putImage(image);
+			      curFrame++;
+			   }
+			   else {
+			      // Wait for another image to arrive.
+			      Thread.sleep((int) Math.round(Math.min(.5 * exposureMs, 20)));
+			   }
+			}
+			mmc.stopSequenceAcquisition();
+			disp = mm.displays().createDisplay(store);
+			Thread.sleep(100);
+			imp = IJ.getImage();
+			zProjector = new ZProjector(imp);
+			zProjector.setMethod(0);
+			zProjector.doProjection();
+			thisZStack.setPixels(zProjector.getProjection().getProcessor().getPixels(), zidx+1);
+
+			// IJ.run(burstImp, "Z Project...", "projection=[Average Intensity]");
+			// avgFr = IJ.getImage();
+			// thisZStack.setPixels(avgFr.getProcessor().getPixels(), zidx+1);
+			// avgFr.close();
+			disp.forceClosed();
+			imp.close();
+			store.close();
+			mm.acquisitions().clearRunnables();
 		}
 		mmc.setPosition(thisZ); // move back to the middle position
+		mmc.waitForSystem();
 
 		// Perform Particle detection -------------------------------------------
 		ImagePlus stackPlus = new ImagePlus("current Z stack", thisZStack);
 		// stackPlus.show();
-		IJ.run(stackPlus,"Spandex Stack", "sigma=" + kernelSigma + " particle=" + particleBrightnessThreshold + " bare=" + 1.3);
+		IJ.run(stackPlus,"Spandex stack", "sigma=" + kernelSigma + " particle=" + particleBrightnessThreshold + " bare=" + 1.3);
 
 		// Save Particle Positions -------------------------------------------
 		IJ.renameResults("Particle Results","Results");
@@ -329,49 +382,3 @@ FileSaver fs = new FileSaver(finalImp);
 fs.saveAsTiff(saveDir + saveFname + "_preview_image.tif");
 		
 IJ.log("Scan complete.\nPreview image saved as \n" + saveDir + saveFname + "_preview_image.tif \nParticle positions saved in \n" + saveDir + saveFname + "_particleXY.txt");
-
-
-
-
-
-
-
-
-// Backup approach if frameCombiner doesn't work ---------------------------------------------------------
-// /**
-//  * Example of running sequence acquisitions (a.k.a. burst acquisitions).
-//  */
-
-// nrFrames = 500;
-// exposureMs = mmc.getExposure();
-// // Create a Datastore for the images to be stored in, in RAM.
-// store = mm.data().createRAMDatastore();
-// // Create a display to show images as they are acquired.
-// mm.displays().createDisplay(store);
-
-// // Start collecting images.
-// // Arguments are the number of images to collect, the amount of time to wait
-// // between images, and whether or not to halt the acquisition if the
-// // sequence buffer overflows.
-// mmc.startSequenceAcquisition(nrFrames, 0, true);
-// // Set up a Coords.CoordsBuilder for applying coordinates to each image.
-// builder = mm.data().getCoordsBuilder().z(0).channel(0).stagePosition(0);
-// int curFrame = 0;
-// while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
-//    if (mmc.getRemainingImageCount() > 0) {
-//       tagged = mmc.popNextTaggedImage();
-//       // Convert to an Image at the desired timepoint.
-//       image = mm.data().convertTaggedImage(tagged,
-//          builder.time(curFrame).build(), null);
-//       store.putImage(image);
-//       curFrame++;
-//    }
-//    else {
-//       // Wait for another image to arrive.
-//       mmc.sleep(Math.min(.5 * exposureMs, 20));
-//    }
-// }
-
-// mmc.stopSequenceAcquisition();
-// // Have Micro-Manager handle logic for ensuring data is saved to disk.
-// mm.displays().manage(store);

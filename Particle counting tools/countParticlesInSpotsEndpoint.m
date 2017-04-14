@@ -24,13 +24,18 @@ img = imread(imgfile);
 umPerPixel = p.camera_pixel_pitch_um/p.obj_magnification*preview_bin;
 xyInImg = [(XY(:,1))/umPerPixel+1 , (-XY(:,2))/umPerPixel+1];
 
-mainFig = figure;
-imshow(img, median(double(img(:)))*[0.8, 1.2]);
-hold on; plot(xyInImg(:,1), xyInImg(:,2), '*');
+
+% First let the person zoom in on the top-left spot
+f1 = figure; hold on;
+imshow(img, median(double(img(:)))*[0.9, 1.1]);
 title('Please click the center of the top-left spot');
-
+set(selectFig, 'ToolBar','figure');
 [startx, starty] = ginput(1);
+close(f2);
+% hold on; plot(xyInImg(:,1), xyInImg(:,2), '*');
 
+selectFig = figure; hold on;
+imshow(img, median(double(img(:)))*[0.9, 1.1]);
 title('Please adjust spot regions');
 
 cropHW = p.crop_diameter/umPerPixel/2;
@@ -46,8 +51,10 @@ for xi = 1:p.number_of_columns
 %         hrectangles{xi,yi} = imrect(gca, thisPos);
         hrectangles{xi,yi} = imellipse(gca, thisPos);
     end
+    disp(num2str(xi/p.number_of_columns*100));
 end
 measureButtonH=uicontrol('Style','pushbutton','String','Measure Regions','Units','normalized','Position',[0.45 0 .1 .05],'Visible','on', 'Callback','uiresume(gcbf)');
+set(selectFig, 'ToolBar','figure');
 uiwait(gcf);
 
 % Count Particles in these regions
