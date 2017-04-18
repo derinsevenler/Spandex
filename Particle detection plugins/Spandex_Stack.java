@@ -31,7 +31,7 @@ import ij.process.ShortProcessor;
 import ij.plugin.ImageCalculator;
 
 
-public class Spandex_stack implements PlugIn {
+public class Spandex_Stack implements PlugIn {
 	protected ImagePlus image;
 	// image property members
 	private double sigma;
