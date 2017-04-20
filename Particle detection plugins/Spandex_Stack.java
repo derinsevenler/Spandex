@@ -76,7 +76,6 @@ public class Spandex_Stack implements PlugIn {
 			displayResults();
 			
 		}
-
 	}
 
 	// private void makeSIMask(ImageProcessor ip){
@@ -106,6 +105,11 @@ public class Spandex_Stack implements PlugIn {
 		medianImage.setTitle("Background Image");
 		// Uses the 'Fast Filters' plugin
 		int kernelSize = (int)(Math.round(20*sigma));
+		// Get the first image in the stack
+		ImageProcessor firstImage = rawImgPlus.getStack.getProcessor(0);
+		for (int x = 0; x<rawImgPlus.getStackSize(); x++){
+			// Divide each image in the stack by the first image
+		}
 		// int imgMean = (int)(Math.round(rawImgPlus.getProcessor().getStatistics().mean));
 		IJ.run(medianImage, "Fast Filters", "link filter=median x=" + kernelSize + " y=" + kernelSize + " preprocessing=none stack");
 		
