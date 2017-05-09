@@ -42,9 +42,8 @@ GenericDialog gd = new GenericDialog("Acquire and save a Z-stack");
 gd.addStringField("Save Directory:",saveDir, 30);
 gd.addStringField("Image Name","chip" ,15); 
 gd.addMessage("");
-gd.addNumericField("Exposure time",initExp, 2);
-gd.addMessage("");
-gd.addNumericField("No. of averaged frames", 16, 1);
+gd.addNumericField("Exposure time",initExp, 0);
+gd.addNumericField("No. of averaged frames", 16, 0);
 curObj = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
 gd.addRadioButtonGroup("Objective",objectiveArray,1,4, curObj + "   "); 
 gd.addMessage("(Each objective has default z-stack settings)");
@@ -158,5 +157,12 @@ mmc.waitForSystem();
 // SAVE Z-STACK
 // ---------------------------------------------------------------------------------
 imp = new ImagePlus(saveFname,thisZStack);
-saveStr = saveDir + saveFname + ".tif"
+saveStr = saveDir + saveFname + ".tif";
 IJ.saveAsTiff(imp, saveStr);
+
+GenericDialog gd2 = new GenericDialog("Acquire Z Stack");
+gd2.addMessage("Acquisition complete!");
+gd2.addMessage("Stack saved as " + saveStr);
+gd2.showDialog();
+if (gd2.wasCanceled())
+	return false;
