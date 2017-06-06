@@ -8,7 +8,7 @@
  *
  * Adapted from Spandex_Stack
  * by Derin Sevenler <derin@bu.edu>
- * This version of SPANDEX runs spandex single on each image of a stack. Use when you are counting particles hybridization/ dehyb over time. 
+ * This version of SPANDEX is designed for multispot acquisition for real time experiments. It will take in an image, and based on the center of the first spot, find each spot, crop it, and analyze it. Then take the data and organize it into trials and conditions
  */
 
 //This version is not complete. It does not handle images with no particles yet. I.E it stops processing if a zero appears for any image in the stack. 
@@ -38,7 +38,7 @@ import ij.process.ShortProcessor;
 import ij.plugin.ImageCalculator;
 //IJ.log('s')
 //IJ.setLocation(x,y) w/ screenWidth, screenHeight
-public class Spandex_Time implements PlugIn 
+public class Spandex_Crop implements PlugIn 
 {
 	protected ImagePlus image;
 
@@ -135,9 +135,11 @@ public class Spandex_Time implements PlugIn
 		// medianImage is essentially our estimate for E_ref
 		ImagePlus medianImage = rawImgPlus.duplicate();
 		medianImage.setTitle("Background Image");
+
 		// Uses the 'Fast Filters' plugin
 		//Fast Filters is a built in plugin w/ documentation here: http://imagejdocu.tudor.lu/doku.php?id=plugin:filter:fast_filters:start
 		int kernelSize = (int)(Math.round(20*sigma));
+
 		// int imgMean = (int)(Math.round(rawImgPlus.getProcessor().getStatistics().mean));
 		IJ.run(medianImage, "Fast Filters", "link filter=median x=" + kernelSize + " y=" + kernelSize + " preprocessing=none stack");
 		
@@ -153,8 +155,24 @@ public class Spandex_Time implements PlugIn
 		niImg.setTitle("Normalized intensity image");
 
 		// Perform smoothing.
-		// Convolution with the correct kernel does not effect peak amplitude but reduces noise
-		IJ.run(niImg, "Gaussian Blur 3D...", "x=" + sigma + " y=" + sigma + " z=1");
+		// Convolution with the correct kernel does not effect peak amplitude but reduces noise. Since we don't average the stack, we must run a 2D image on each slice, instead of a 3d filter
+		// This step is correspondingly tricky. 
+		ImageStack stack = niImg.getStack();
+		Calibration cal = niImg.getCalibration();
+		//ImageStack niStack = new ImageStack(imWidth, imHeight, zSize);
+		for (int idz = 1; idz<=zSize; idz++)
+		{
+
+			IJ.run(stack.getProcessor(idz), "Gaussian Blur...", "x=" + sigma + " y=" + sigma + " z=1");
+			// String label = new String(stack.getSliceLabel(idz));
+			// ImagePlus thisSlice = new ImagePlus(label, stack.getProcessor(idz));
+			// thisSlice.setCalibration(cal);
+			// IJ.run(thisSlice, "Gaussian Blur 2D...", "x=" + sigma + " y=" + sigma + " z=1");
+			// stack.deleteSlice(idz);
+			// stack.addSlice(label, thisSlice, idz-1);	
+		}
+		niImg.setStack(stack);
+		
 		if (showIntermediateImages)
 		{
 			medianImage.show();
