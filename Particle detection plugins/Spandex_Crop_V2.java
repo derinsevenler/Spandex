@@ -37,7 +37,7 @@ import ij.process.ImageStatistics;
 import ij.process.ShortProcessor;
 import ij.plugin.ImageCalculator;
 
-public class Spandex_Crop implements PlugIn 
+public class Spandex_Crop_V2 implements PlugIn 
 {
 	protected ImagePlus image;
 
@@ -156,7 +156,7 @@ public class Spandex_Crop implements PlugIn
 							showKeyPoints();
 						} 
 						counter++;
-						IJ.log(String.valueOf(counter));
+						//IJ.log(String.valueOf(counter));
 					}
 				}
 			}
@@ -352,28 +352,46 @@ public class Spandex_Crop implements PlugIn
 		// TODO: look at PSFs, brightness etc
 	}
 
-	// private void update()
-	// {
-	// 	resultsTable.setValue("x", n, timeStamps[n+(x*(int)cols+y)*zSize]);
-	// 	resultsTable.setValue("y", n, totalParticles[n+(x*(int)cols+y)*zSize]);
-	// }
-
 	private void displayResults()
 	{
 
 		// create a resultsTable and put it in the resultsWindow
 		ResultsTable resultsTable = new ResultsTable();
-		for (int x =0; x<rows; x++)
+		int trial =0;
+		int condition = 0;
+		boolean heading = false;
+		//counter must be >0 for the resultsTable to generate columns. Who Guessed it??? I didn't :/
+		resultsTable.incrementCounter();
+		for (int n = 0; n<counter; n++)
 		{
-			for(int y =0; y<cols; y++)
+			//cycled through a trial
+			if(n%zSize == 0 && n%(zSize*rows) != 0)
 			{
-				for (int n = 0; n<zSize; n++)
-				{
-				resultsTable.setValue("x", n, timeStamps[n+(x*(int)cols+y)*zSize]);
-				resultsTable.setValue("y", n, totalParticles[n+(x*(int)cols+y)*zSize]);
-				}
+				//resultsTable.setHeading(1+trial+condition*(int)rows,'x'+String.valueOf(condition+1)+'-'+String.valueOf(trial+1));
+				trial++;
+				heading = false;
 			}
+
+			//cycled through a condition
+			if(n%(zSize*rows) == 0 && n != 0)
+			{
+				//resultsTable.setHeading(1+trial+condition*(int)rows,'x'+String.valueOf(condition+1)+'-'+String.valueOf(trial+1));
+				condition++;
+				trial = 0;
+				heading = false;
+			}
+			//sets the heading of a new row
+			if(!heading)
+			{
+				resultsTable.setHeading(trial+condition*(int)rows,'x'+String.valueOf(condition+1)+'-'+String.valueOf(trial+1));
+				heading = true;
+			}
+
+			resultsTable.addValue((trial+condition*(int)rows), totalParticles[n]);
+		// resultsTable.setValue("x", n, timeStamps[n]);
+		// resultsTable.setValue("y", n, totalParticles[n]);
 		}
+
 		
 		resultsTable.show("Particle Results");
 		// Create a dialog summary
