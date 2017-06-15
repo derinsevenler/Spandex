@@ -13,7 +13,7 @@ Options.Buttonnames = {'Ok', 'Quit'};
 Title = 'Spot Finding Parameters';
 
 % Number of Rows
-Prompt(1,:) = {'   Number of Rows:', 'number_of_rows', []};
+Prompt(1,:) = {'Number of Rows:', 'number_of_rows', []};
 Formats(1,1).type = 'edit';
 Formats(1,1).style = 'edit';
 Formats(1,1).format = 'float';
@@ -21,7 +21,7 @@ Formats(1,1).size = [25 20];
 DefAns.number_of_rows = 5;
 
 % Number of Columns
-Prompt(2,:) = {'           Number of Columns:', 'number_of_columns', []};
+Prompt(2,:) = {'Number of Columns:', 'number_of_columns', []};
 Formats(1,2).type = 'edit';
 Formats(1,2).style = 'edit';
 Formats(1,2).format = 'float';
@@ -60,7 +60,7 @@ Formats(3,2).format = 'float';
 Formats(3,2).size = [40 20];
 DefAns.camera_pixel_pitch_um = 3.45;
 
-
+set(0, 'DefaultUIControlFontSize', 16); % increase font size for readability
 [Answer,Cancelled] = inputsdlg(Prompt,Title,Formats,DefAns,Options);
 
 end
