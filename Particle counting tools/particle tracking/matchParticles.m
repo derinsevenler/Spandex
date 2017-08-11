@@ -38,9 +38,13 @@ for n = 1:(length(particles)-1)
         % find neighbors which correspond to matches.
 
         vecs = p2(pairs(:,1),:)- p1(pairs(:,2),:);
-        % plot(vecs(:,1), vecs(:,2), '*b');
+        % figure; plot(vecs(:,1), vecs(:,2), '*b');
         [clustCent,~,clustMembsCell] = MeanShiftCluster(vecs',clusterBandwidth); % vecs input must be mdim x npoints
-        [~,matchCluster] = min(clustCent(1,:).^2 + clustCent(2,:).^2); % The match cluster is the cluster closest to (0,0) displacement vector which is the largest also
+        
+        % The match cluster is the cluster closest to (0,0) displacement vector
+        % [~,matchCluster] = min(clustCent(1,:).^2 + clustCent(2,:).^2);
+        % The match cluster is the largest cluster
+        [~,matchCluster] = max(cellfun(@length,clustMembsCell));
 
         m = pairs(clustMembsCell{matchCluster},:);
         matches(n) = {fliplr(m)};

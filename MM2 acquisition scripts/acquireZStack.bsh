@@ -1,0 +1,168 @@
+// Easily acquire and save a z-stack using proper frame averaging
+// Use this to save images for later SPANDEX particle detection.
+
+
+import ij.gui.*; 
+import ij.IJ;
+import ij.Menus;
+import ij.io.*;
+import ij.plugin.*;
+import ij.*;
+
+// import ij.ImagePlus;
+// import ij.ImageStack;
+// import ij.ImageProcessor;
+import ij.measure.ResultsTable;
+
+// log = mm.getLogManager();
+initExp = mmc.getExposure();
+
+
+// ---------------------------------------------------------------------------------
+// GET SETTINGS FROM USER
+// ---------------------------------------------------------------------------------
+
+directoryC = new DirectoryChooser("Choose the save directory:");
+directoryC.setDefaultDirectory("D:\\User_Scratch");
+saveDir = directoryC.getDirectory();
+
+String[] objectiveArray = new String[4]; 
+objectiveArray[0]="10x   "; 
+objectiveArray[1]="20x   "; 
+objectiveArray[2]="40x   "; 
+objectiveArray[3]="50x   ";
+
+combiner = new StackCombiner();
+ic = new ImageCalculator();
+// zProjector = new ZProjector();
+// zProjector.setMethod(0);
+
+GenericDialog gd = new GenericDialog("Acquire and save a Z-stack");
+
+gd.addStringField("Save Directory:",saveDir, 30);
+gd.addStringField("Image Name","chip" ,15); 
+gd.addMessage("");
+gd.addNumericField("Exposure time",initExp, 0);
+gd.addNumericField("No. of averaged frames", 16, 0);
+curObj = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
+gd.addRadioButtonGroup("Objective",objectiveArray,1,4, curObj + "   "); 
+gd.addMessage("(Each objective has default z-stack settings)");
+gd.addCheckbox("Use custom z-stack settings", false);
+gd.addNumericField("Total stack height (microns)", 8,2);
+gd.addNumericField("Step size (microns)", 0.5,2);
+
+gd.showDialog(); 
+if (gd.wasCanceled()) 
+return false; 
+
+// Get Inputs
+saveDir = gd.getNextString();
+saveFname = gd.getNextString();
+exposureTime = gd.getNextNumber();
+burstFrameNo = gd.getNextNumber();
+objLongName = gd.getNextRadioButton();
+useCustomSettings = gd.getNextBoolean();
+
+zStackWidthUm = gd.getNextNumber();
+zStepUm = gd.getNextNumber();
+if ( !useCustomSettings){
+	switch (objLongName.substring(0,3)) {
+		case "10x":
+			zStackWidthUm = 48;
+			zStepUm = 3;
+			break;
+		case "20x":
+			zStackWidthUm = 24;
+			zStepUm = 1.5;
+			break;
+		case "40x":
+			zStackWidthUm = 8;
+			zStepUm = .2;
+			break;
+		case "50x":
+			zStackWidthUm = 8;
+			zStepUm = .2;
+			break;
+	}
+}
+nZPos = zStackWidthUm/zStepUm;
+
+// ---------------------------------------------------------------------------------
+// ACQUIRE Z-STACK
+// ---------------------------------------------------------------------------------
+
+mm.setExposure(exposureTime);
+mmc.setConfig("Objective",objLongName.substring(0,3));
+imWidth = mmc.getImageWidth();
+imHeight = mmc.getImageHeight();
+bitDepth = mmc.getImageBitDepth();
+
+
+thisZ = mmc.getPosition();
+zStart = thisZ-zStackWidthUm/2;
+ImageStack thisZStack = new ImageStack((int)imWidth, (int)imHeight, (int)nZPos);
+for (int zidx=0; zidx< nZPos; zidx++) {
+	mmc.setPosition(zStart+zidx*zStepUm);
+	mmc.waitForSystem();
+
+	// image = mm.live().snap(false).get(0);
+	// thisZStack.setPixels(image.getRawPixels(), zidx+1);
+
+	// Acquire a burst of images
+	exposureMs = mmc.getExposure();
+	// Create a Datastore for the images to be stored in, in RAM.
+	store = mm.data().createRAMDatastore();
+	// disp = mm.displays().createDisplay(store);
+	mmc.startContinuousSequenceAcquisition(0);
+	// Set up a Coords.CoordsBuilder for applying coordinates to each image.
+	builder = mm.data().getCoordsBuilder().z(0).channel(0).stagePosition(0);
+	int curFrame = 0;
+	while ( curFrame < burstFrameNo ){
+	// while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
+	   if (mmc.getRemainingImageCount() > 0) {
+	      tagged = mmc.popNextTaggedImage();
+	      // Convert to an Image at the desired timepoint.
+	      image = mm.data().convertTaggedImage(tagged,
+	         builder.time(curFrame).build(), null);
+	      store.putImage(image);
+	      curFrame++;
+	   }
+	   else {
+	      // Wait for another image to arrive.
+	      Thread.sleep((int) Math.round(Math.min(.5 * exposureMs, 20)));
+	   }
+	}
+	mmc.stopSequenceAcquisition();
+	disp = mm.displays().createDisplay(store);
+	Thread.sleep(100);
+	imp = IJ.getImage();
+	zProjector = new ZProjector(imp);
+	zProjector.setMethod(0);
+	zProjector.doProjection();
+	thisZStack.setPixels(zProjector.getProjection().getProcessor().getPixels(), zidx+1);
+
+	// IJ.run(burstImp, "Z Project...", "projection=[Average Intensity]");
+	// avgFr = IJ.getImage();
+	// thisZStack.setPixels(avgFr.getProcessor().getPixels(), zidx+1);
+	// avgFr.close();
+	disp.forceClosed();
+	imp.close();
+	store.close();
+	mm.acquisitions().clearRunnables();
+}
+mmc.setPosition(thisZ); // move back to the middle position
+mmc.waitForSystem();
+
+// ---------------------------------------------------------------------------------
+// SAVE Z-STACK
+// ---------------------------------------------------------------------------------
+imp = new ImagePlus(saveFname,thisZStack);
+saveStr = saveDir + saveFname + ".tif";
+IJ.saveAsTiff(imp, saveStr);
+
+GenericDialog gd2 = new GenericDialog("Acquire Z Stack");
+gd2.addMessage("Acquisition complete!");
+gd2.addMessage("Stack saved as " + saveStr);
+gd2.showDialog();
+if (gd2.wasCanceled())
+	return false;
