@@ -7,28 +7,28 @@
  * Created February 2017
  */
 
-import java.awt.Color;
-import java.util.ArrayList;
-import java.util.List;
+import java.awt.Color; //encasulate colors in sRGB color space
+import java.util.ArrayList;//resizable array implimentation of list interface
+import java.util.List;//sequence. precise control over where each element is inserted.
 
-import ij.IJ;
-import ij.ImageJ;
-import ij.ImagePlus;
-import ij.ImageStack;
-import ij.gui.GenericDialog;
-import ij.gui.OvalRoi;
-import ij.gui.Overlay;
-import ij.gui.Roi;
-import ij.io.FileInfo;
-import ij.io.Opener;
-import ij.measure.ResultsTable;
-import ij.plugin.PlugIn;
-import ij.process.ByteProcessor;
-import ij.process.FloatProcessor;
-import ij.process.ImageProcessor;
-import ij.process.ImageStatistics;
-import ij.process.ShortProcessor;
-import ij.plugin.ImageCalculator;
+import ij.IJ;//this imports the IJ class (contains static utility methods)
+import ij.ImageJ; //main imageJ class
+import ij.ImagePlus;//contains ImageProcessor(2D) or ImageStack(3-5D) and methods for manipulation
+import ij.ImageStack;//expandable array of images
+import ij.gui.GenericDialog;//customizable dialog box
+import ij.gui.OvalRoi;//Oval shaped region of interest (ROI)
+import ij.gui.Overlay;//list of ROIs that can be drawn non-desructively
+import ij.gui.Roi;//rectangular region of interest
+import ij.io.FileInfo;//methods that describe an image file
+import ij.io.Opener;//Opens tiff (and tiff stacks), dicom, fits, pgm, jpeg, bmp or gif images, and look-up tables, using a file open dialog or a path
+import ij.measure.ResultsTable;//table to store measured resutls as column if values
+import ij.plugin.PlugIn;//method called when a plugin is loaded
+import ij.process.ByteProcessor;//8-bit image and methods operating on it
+import ij.process.FloatProcessor;//32-bit floating point image and methods that operate on it
+import ij.process.ImageProcessor;//superclass. ImageProcessor contains the pixel data of 2D image w/methods to manipulate it
+import ij.process.ImageStatistics;//allows for histograms and other statistically analysis of an image
+import ij.process.ShortProcessor;//16 bit unsigned image and methods for it
+import ij.plugin.ImageCalculator;//implements Process/Image Calculator Commands
 
 
 public class Spandex_Stack implements PlugIn {
@@ -64,10 +64,16 @@ public class Spandex_Stack implements PlugIn {
 
 	public void run(String arg) {
 		if (showDialog()) {
+			//acquire relevant image data
 			rawImgPlus = IJ.getImage();
 			imWidth = rawImgPlus.getWidth();
 			imHeight = rawImgPlus.getHeight();
 			zSize = rawImgPlus.getNSlices();
+<<<<<<< HEAD
+			
+			//process using classes below
+=======
+>>>>>>> refs/remotes/origin/master
 			// makeSIMask(rawImgStack.getProcessor(1));
 			nirImagePlus = performPreProcessing();
 			findKeyPoints(nirImagePlus.getStack());
@@ -106,13 +112,14 @@ public class Spandex_Stack implements PlugIn {
 		ImagePlus medianImage = rawImgPlus.duplicate();
 		medianImage.setTitle("Background Image");
 		// Uses the 'Fast Filters' plugin
+		//Fast Filters is a built in plugin w/ documentation here: http://imagejdocu.tudor.lu/doku.php?id=plugin:filter:fast_filters:start
 		int kernelSize = (int)(Math.round(20*sigma));
 		// int imgMean = (int)(Math.round(rawImgPlus.getProcessor().getStatistics().mean));
 		IJ.run(medianImage, "Fast Filters", "link filter=median x=" + kernelSize + " y=" + kernelSize + " preprocessing=none stack");
 		
 		// Subtract medianImage from original
 		ImageCalculator ic = new ImageCalculator();
-		ImagePlus diffImage = ic.run("Subtract create 32-bit stack", rawImgPlus, medianImage);
+		ImagePlus diffImage = ic.run("Subtract create 32-bit stack", rawImgPlus, medianImage); //calculates the difference between the two
 		diffImage.setTitle("Difference image");
 		
 		// Divide by the medianImage to get niImg
@@ -135,23 +142,24 @@ public class Spandex_Stack implements PlugIn {
 	private void findKeyPoints(ImageStack imageStack){
 		// Find the min and max values and indices
 
-
-		maxVals = (FloatProcessor) imageStack.getProcessor(1).duplicate();
+		//this sets up all the variables we will use in the loop
+		maxVals = (FloatProcessor) imageStack.getProcessor(1).duplicate(); //getProcessor returns the desired processor in the stack
 		float[] maxValPixs = (float[]) maxVals.getPixels();
 		minVals = (FloatProcessor) imageStack.getProcessor(1).duplicate();
 		float[] minValPixs = (float[]) minVals.getPixels();
-		maxIdx = new FloatProcessor(imWidth, imHeight);
+		maxIdx = new FloatProcessor(imWidth, imHeight); //creates a new float processor equal dimension to our image
 		float[] maxIdxPixs = (float[]) maxIdx.getPixels();
 		minIdx = new FloatProcessor(imWidth, imHeight);
 		float[] minIdxPixs = (float[]) minIdx.getPixels();
+
 		for (int idz = 1; idz<zSize; idz++){
-			ImageProcessor thisSlice = imageStack.getProcessor(idz+1);
+			ImageProcessor thisSlice = imageStack.getProcessor(idz+1); //cycles through the image stack
 			float[] thisSlicePixs = (float[]) thisSlice.getPixels();
-			for (int idx = 0; idx<thisSlicePixs.length; idx++){
+			for (int idx = 0; idx<thisSlicePixs.length; idx++){ //cycles through the length-wise pixels of the image-array
 				if ((thisSlicePixs[idx]) > (maxValPixs[idx])){
-					maxValPixs[idx] = thisSlicePixs[idx];
+					maxValPixs[idx] = thisSlicePixs[idx]; //keeps track of the brightest pixel amounst all stack elements per pixel location.
 					maxIdxPixs[idx] = idz;
-				} else if ((thisSlicePixs[idx]) < (minValPixs[idx])){
+				} else if ((thisSlicePixs[idx]) < (minValPixs[idx])){ //same for min value
 					minValPixs[idx] = thisSlicePixs[idx];
 					minIdxPixs[idx] = idz;
 				}
@@ -159,13 +167,16 @@ public class Spandex_Stack implements PlugIn {
 			IJ.showProgress((idz+1),zSize);
 		}
 		
+<<<<<<< HEAD
+=======
 
+>>>>>>> refs/remotes/origin/master
 		// Calculate the NIR and PPS
-		nirs = new FloatProcessor(imWidth, imHeight);
+		nirs = new FloatProcessor(imWidth, imHeight); //FloatProcessor is an empty array
 		pps = new FloatProcessor(imWidth, imHeight);
 		float[] nirPixs = (float[]) nirs.getPixels();
 		for (int idx = 0; idx<maxValPixs.length; idx++){
-			nirPixs[idx] = ((float)(maxValPixs[idx]) - (float)(minValPixs[idx]));
+			nirPixs[idx] = ((float)(maxValPixs[idx]) - (float)(minValPixs[idx])); //we normalize the orginal image stack by subtracting the net minimum by the net maximum to lower dynamic range
 		}
 		ImagePlus nirPlus = new ImagePlus("Normalized Intensity Range", nirs);
 
@@ -176,7 +187,7 @@ public class Spandex_Stack implements PlugIn {
 
 		// Perform thresholding and get keypoints
 		IJ.setThreshold(nirPlus, particleThreshold, 1);
-		IJ.run(nirPlus,"Make Binary","");
+		IJ.run(nirPlus,"Make Binary",""); //array of ones and zeros based on threshold setting
 		IJ.run(nirPlus,"Analyze Particles...", "size=0-200 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
 		if (showIntermediateImages){
 			nirPlus.setTitle("Keypoints");
