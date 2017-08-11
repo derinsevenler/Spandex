@@ -1,0 +1,141 @@
+
+import ij.gui.*; 
+import ij.IJ;
+import ij.Menus;
+import ij.io.*;
+import ij.plugin.*;
+import ij.*;
+import java.lang.System;
+
+// import ij.ImagePlus;
+// import ij.ImageStack;
+// import ij.ImageProcessor;
+import ij.measure.ResultsTable;
+
+initExp = mmc.getExposure();
+
+// ---------------------------------------------------------------------------------
+// GET SETTINGS FROM USER
+// ---------------------------------------------------------------------------------
+ 
+directoryC = new DirectoryChooser("Choose the save directory:");
+directoryC.setDefaultDirectory("D:\\User_Scratch");
+saveDir = directoryC.getDirectory();
+
+GenericDialog gd = new GenericDialog("Realtime Single-FOV acquisition with frame averaging");
+
+gd.addStringField("Save Directory:",saveDir, 30);
+gd.addStringField("Chip Name","chip" ,15); 
+gd.addMessage("");
+gd.addNumericField("Total experiment time (minutes)", 20,1);
+gd.addNumericField("Time between measurements (seconds)", 30,1);
+gd.addNumericField("Number of frames to average", 16,1);
+
+gd.addMessage("");
+gd.addNumericField("Exposure time",initExp, 2);
+gd.addMessage("");
+
+gd.showDialog(); 
+if (gd.wasCanceled()) 
+return false; 
+
+// Get Inputs
+saveDir = gd.getNextString();
+saveFname = gd.getNextString();
+experimentTimeMinutes = gd.getNextNumber();
+deltaTSeconds = gd.getNextNumber();
+exposureTime = gd.getNextNumber();
+burstFrameNo = gd.getNextNumber();
+
+// ---------------------------------------------------------------------------------
+// CONFIGURATION & SETUP
+// ---------------------------------------------------------------------------------
+
+
+combiner = new StackCombiner();
+ic = new ImageCalculator();
+
+// Set microscope configuration and get image scale factors
+mm.setExposure(exposureTime);
+imWidth = mmc.getImageWidth();
+imHeight = mmc.getImageHeight();
+bitDepth = mmc.getImageBitDepth();
+
+mm.live().setLiveMode(false);
+mm.acquisitions().clearRunnables();
+
+// Set the detection threshold and configure the frame averaging pipeline based on the particles
+mm.data().clearPipeline();
+
+// Calculate the start time of each frame
+desiredNumFrames = Math.ceil(experimentTimeMinutes*60/deltaTSeconds);
+double[] desiredStartTimeSeconds = new double[desiredNumFrames];
+for(int x=0; x<desiredNumFrames; x++){
+	desiredStartTimeSeconds[x] = deltaTSeconds*x;
+}
+
+// ---------------------------------------------------------------------------------
+// PERFORM ACQUISITION
+// ---------------------------------------------------------------------------------
+
+IJ.log("Performing acquisition...");
+
+BufferedWriter timeBuffer = new BufferedWriter(new OutputStreamWriter(timeFos));
+t0ms = System.currentTimeMillis();
+exptRunning = true;
+frameIdx = 0;
+
+while (exptRunning){
+	curTimeSeconds = (System.currentTimeMillis()/1000.0) - (t0ms/1000.0);
+	while (curTimeSeconds < desiredStartTimeSeconds[frameIdx]){
+		// wait in 100 ms intervals. If we are late, start immediately.
+		mmc.sleep(100);
+		// IJ.log("Current time is " + curTimeSeconds);
+		curTimeSeconds = (System.currentTimeMillis()/1000.0) - (t0ms/1000.0);
+	}
+	startTimeMs = System.currentTimeMillis();
+	timeBuffer.write("" + frameIdx + ", " + Math.round((startTimeMs-t0ms)/1000.0));
+	timeBuffer.newLine();
+
+	frameIdx +=1;
+
+	// Acquire a burst of images
+	exposureMs = mmc.getExposure();
+	// Create a Datastore for the images to be stored in, in RAM.
+	store = mm.data().createRAMDatastore();
+	disp = mm.displays().createDisplay(store);
+	mmc.startContinuousSequenceAcquisition(0);
+	// Set up a Coords.CoordsBuilder for applying coordinates to each image.
+	builder = mm.data().getCoordsBuilder().z(0).channel(0).stagePosition(0);
+	int curFrame = 0;
+	while ( curFrame < burstFrameNo ){
+	// while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
+	   if (mmc.getRemainingImageCount() > 0) {
+	      tagged = mmc.popNextTaggedImage();
+	      // Convert to an Image at the desired timepoint.
+	      image = mm.data().convertTaggedImage(tagged,
+	         builder.time(curFrame).build(), null);
+	      store.putImage(image);
+	      curFrame++;
+	   }
+	   else {
+	      // Wait for another image to arrive.
+	      mmc.sleep(Math.min(.5 * exposureMs, 20));
+	   }
+	}
+	mmc.stopSequenceAcquisition();
+	burstImp = disp.getImagePlus();
+
+	
+	
+	// Update the display & figure out if the experiment is over
+	finishTimeMs = System.currentTimeMillis();
+	exptRunning = (((finishTimeMs-t0ms)/60000.0) < experimentTimeMinutes);
+
+	IJ.log("Acquired " + frameIdx + " timepoints in " + Math.round((finishTimeMs-t0ms)/6000.0)/10.0 + " minutes...");
+}
+timeBuffer.close();
+fos.close();
+System.gc();
+
+IJ.log("Scan complete.\nPreview images saved as \n" + saveDir + saveFname + "_preview_image.tif \nParticle positions saved in \n" + saveDir + saveFname + "_particleXY.txt");
