@@ -1,20 +1,18 @@
-/* 
- * Single Particle Analysis and Detection EXperience
- * (SPANDEX)
- * for Single Particle IRIS (SP-IRIS)
- * 
- * @author Derin Sevenler <derin@bu.edu>
- * Created February 2017
- */
 
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 
+import edu.emory.mathcs.restoretools.Enums;
+import edu.emory.mathcs.restoretools.iterative.IterativeEnums;
+import edu.emory.mathcs.restoretools.iterative.mrnsd.MRNSDDoubleIterativeDeconvolver2D;
+import edu.emory.mathcs.restoretools.iterative.mrnsd.MRNSDOptions;
+
 import ij.IJ;
 import ij.ImageJ;
 import ij.ImagePlus;
 import ij.ImageStack;
+import ij.Undo;
 import ij.gui.GenericDialog;
 import ij.gui.OvalRoi;
 import ij.gui.Overlay;
@@ -30,14 +28,17 @@ import ij.process.ImageStatistics;
 import ij.process.ShortProcessor;
 import ij.plugin.ImageCalculator;
 
+import ij.plugin.filter.RankFilters;
+import inra.ijpb.watershed.*;
+import inra.ijpb.morphology.*;
+
 
 public class Spandex_Stack implements PlugIn {
 	protected ImagePlus image;
 	// image property members
-	private double sigma;
+	private double radiusThreshold;
+	private double contrastTreshold;
 	private boolean showIntermediateImages;
-	private double particleThreshold;
-	private double siThreshold;
 	private String arg;
 	private int imWidth;
 	private int imHeight;
@@ -57,10 +58,22 @@ public class Spandex_Stack implements PlugIn {
 	private double[] yPos;
 	private List<Double> xPosFiltered;
 	private List<Double> yPosFiltered;
-	private boolean isParticle=true; // true if particle is found o.w. false
+	private boolean foundParticle=true;
 
-	// private ImageProcessor siMask;
-	private float[] particleXY;
+	private IterativeEnums.PreconditionerType preconditioner;
+	private double preconditionerTol;
+	private IterativeEnums.BoundaryType boundary;
+	private IterativeEnums.ResizingType resizing;
+	private Enums.OutputType output;
+	private int maxIters;
+	private boolean showIteration;
+	private MRNSDOptions options;
+	
+	private ImagePlus[][] psfa;
+	private String psfp;
+	private boolean tx,twx,fx,ctbool,radbool;
+	private int cctthresh,cthreshrad;
+
 
 	public void run(String arg) {
 		if (showDialog()) {
@@ -68,35 +81,20 @@ public class Spandex_Stack implements PlugIn {
 			imWidth = rawImgPlus.getWidth();
 			imHeight = rawImgPlus.getHeight();
 			zSize = rawImgPlus.getNSlices();
-			// makeSIMask(rawImgStack.getProcessor(1));
+
+			psfPath = IJ.getFilePath("Choose PSF File:");
+			psf = IJ.openImage(psfPath);
+
 			nirImagePlus = performPreProcessing();
 			findKeyPoints(nirImagePlus.getStack());
-			if(isParticle){
-			filterKeyPoints();
-			displayResults();
+			if(foundParticle){
+				filterKeyPoints();
+				displayResults();
 			}
 			
 		}
 
 	}
-
-	// private void makeSIMask(ImageProcessor ip){
-	// 	ImageProcessor smallImg = ip.resize(ip.getWidth()/5);
-	// 	ImagePlus smallImgPl = new ImagePlus("smallImage", smallImg);
-	// 	IJ.run(smallImgPl, "Bandpass Filter...", "filter_large=40 filter_small=5 suppress=None tolerance=5 autoscale saturate process");
-	// 	ImageStatistics smallStats = smallImgPl.getProcessor().getStatistics();
-	// 	smallImg.threshold((int)Math.round(smallStats.mean*siThreshold));
-		
-	// 	ByteProcessor siByteMask = smallImg.convertToByteProcessor();
-	// 	for (int idx = 0; idx<12; idx++){
-	// 		siByteMask.erode();
-	// 	}
-	// 	siMask = siByteMask.resize(ip.getWidth(), ip.getHeight());
-	// 	if (showIntermediateImages){
-	// 		ImagePlus siMaskPl = new ImagePlus("Bare Silicon Regions",siMask);
-	// 		siMaskPl.show();
-	// 	}
-	// }
 
 	private ImagePlus performPreProcessing(){
 		// Perform filtering and smoothing on the stack to reduce shot noise and illumination gradients.
@@ -106,7 +104,7 @@ public class Spandex_Stack implements PlugIn {
 		ImagePlus medianImage = rawImgPlus.duplicate();
 		medianImage.setTitle("Background Image");
 		// Uses the 'Fast Filters' plugin
-		int kernelSize = (int)(Math.round(20*sigma));
+		int kernelSize = (int)(Math.round(2*radiusThreshold));
 		// int imgMean = (int)(Math.round(rawImgPlus.getProcessor().getStatistics().mean));
 		IJ.run(medianImage, "Fast Filters", "link filter=median x=" + kernelSize + " y=" + kernelSize + " preprocessing=none stack");
 		
@@ -123,7 +121,7 @@ public class Spandex_Stack implements PlugIn {
 
 		// Perform smoothing.
 		// Convolution with the correct kernel does not effect peak amplitude but reduces noise
-		IJ.run(niImg, "Gaussian Blur 3D...", "x=" + sigma + " y=" + sigma + " z=1");
+		IJ.run(niImg, "Gaussian Blur 3D...", "x=" + (radiusThreshold/10.0) + " y=" + (radiusThreshold/10.0) + " z=1");
 		if (showIntermediateImages){
 			medianImage.show();
 			diffImage.show();
@@ -174,6 +172,47 @@ public class Spandex_Stack implements PlugIn {
 			nirShow.show();
 		}
 
+		// Perform deconvolution
+		IJ.run(nirPlus, "Gaussian Blur...", "radius=" + (radiusThreshold/10.0));
+
+		//init options for deconv and do deconv
+		boolean autoStoppingTol = true;
+		boolean logConvergence = false;
+		double stoppingTol = 0;
+		double threshold = 0;
+		boolean useThreshold = false;
+		options  = new MRNSDOptions(autoStoppingTol,stoppingTol,useThreshold,threshold,logConvergence);
+
+		new MRNSDDoubleIterativeDeconvolver2D(nirPlus, psfa, preconditioner, preconditionerTol, 
+				boundary, resizing, output, maxIters, showIteration, options);
+
+		// take original
+		ImagePlus nirpro = nirPlus.duplicate();
+		ImagePlus nirdisp = nirPlus.duplicate();
+		IJ.run(nirpro,"Invert","");
+
+		//take inverted
+		ImageProcessor nirprop = nirpro.getProcessor();
+		
+		// convert to 8 bit and apply Local Adaptive Threshold with Bernsen method
+		ImageConverter imconv = new ImageConverter(nirPlus);
+		imconv.convertToGray8();
+		ImagePlus nirPlus1 = Bernsen(nirPlus,threshrad,conthresh,0,true);
+		ImagePlus showex = nirPlus1.duplicate();
+		if(showIntermediateImages){
+		showex.show();
+		}
+		ImageProcessor nirbip = nirPlus1.getProcessor();
+		
+		// do watershed
+		WatershedTransform2D wshed = new WatershedTransform2D(nirprop,nirbip);
+		ImageProcessor wshedim = wshed.apply();
+		ImagePlus wshedimp = new ImagePlus("watershed",wshedim);
+		if(showIntermediateImages){
+		wshedimp.show();
+		}
+
+
 		// Perform thresholding and get keypoints
 		IJ.setThreshold(nirPlus, particleThreshold, 1);
 		IJ.run(nirPlus,"Make Binary","");
@@ -188,7 +227,7 @@ public class Spandex_Stack implements PlugIn {
 
 		int xCol = resultsTable.getColumnIndex("XStart");
 		if(xCol==resultsTable.COLUMN_NOT_FOUND){
-			isParticle=false;
+			foundParticle=false;
 			IJ.error("No particle is found");
 			return;
 		}
@@ -212,16 +251,74 @@ public class Spandex_Stack implements PlugIn {
 		xPosFiltered = new ArrayList<Double>();
 		yPosFiltered = new ArrayList<Double>();
 		for (int n = 0; n<xPos.length; n++){
-			int thisXpx = (int)Math.round(xPos[n]);
-			int thisYpx = (int)Math.round(yPos[n]);
-			// if ( siMask.getPixel(thisXpx, thisYpx) < 10){
-				// this particle is outside, it's ok
-				xPosFiltered.add(xPos[n]);
-				yPosFiltered.add(yPos[n]);
-			// }
+			xPosFiltered.add(xPos[n]);
+			yPosFiltered.add(yPos[n]);
+		}
+	}
+
+	private ImagePlus Bernsen(ImagePlus imp, int radius,  double par1, double par2, boolean doIwhite ) {
+        //adaptive local thresholding method taken from IJ's adaptive thresholding plugin to make setting options easier
+		ImagePlus Maximp, Minimp;
+		ImageProcessor ip=imp.getProcessor(), ipMax, ipMin;
+		int contrast_threshold=15;
+		int local_contrast;
+		int mid_gray;
+		byte object;
+		byte backg;
+		int temp;
+		// 0 - Check validity of parameters
+		if (null == imp) return null;
+		int xe = ip.getWidth();
+		int ye = ip.getHeight();
+
+		//int [] data = (ip.getHistogram());
+
+		IJ.showStatus("Thresholding...");
+		long startTime = System.currentTimeMillis();
+		//1 Do it
+		if (imp.getStackSize()==1){
+			    ip.snapshot();
+			    Undo.setup(Undo.FILTER, imp);
+		}
+		if (par1!=0) {
+			IJ.log("Bernsen: changed contrast_threshold from :"+ contrast_threshold + "  to:" + par1);
+			contrast_threshold= (int) par1;
 		}
 
-		// TODO: look at PSFs, brightness etc
+		if (doIwhite){
+			object =  (byte) 0xff;
+			backg =   (byte) 0;
+		}
+		else {
+			object =  (byte) 0;
+			backg =  (byte) 0xff;
+		}
+		ImagePlus implus = new ImagePlus("",ip);
+		Maximp=implus.duplicate();
+		ipMax=Maximp.getProcessor();
+		RankFilters rf=new RankFilters();
+		rf.rank(ipMax, radius, rf.MAX);// Maximum
+		//Maximp.show();
+		ImagePlus implus1 = new ImagePlus("",ip);
+		Minimp=implus1.duplicate();
+		ipMin=Minimp.getProcessor();
+		rf.rank(ipMin, radius, rf.MIN); //Minimum
+		//Minimp.show();
+		byte[] pixels = (byte [])ip.getPixels();
+		byte[] max = (byte [])ipMax.getPixels();
+		byte[] min = (byte [])ipMin.getPixels();
+
+		for (int i=0; i<pixels.length; i++) {
+			local_contrast = (int)((max[i]&0xff) -(min[i]&0xff));
+			mid_gray =(int) ((min[i]&0xff) + (max[i]&0xff) )/ 2;
+			temp=(int) (pixels[i] & 0x0000ff);
+			if ( local_contrast < contrast_threshold )
+				pixels[i] = ( mid_gray >= 128 ) ? object :  backg;  //Low contrast region
+			else
+				pixels[i] = (temp >= mid_gray ) ? object : backg;
+		}    
+		//imp.updateAndDraw();
+		return imp;
 	}
 
 	private void displayResults(){
@@ -243,29 +340,21 @@ public class Spandex_Stack implements PlugIn {
 			resultsTable.setValue("y", n, yPosFiltered.get(n));
 		}
 		resultsTable.show("Particle Results");
-		// Create a dialog summary
-		// GenericDialog gd = new GenericDialog("SPANDEX RESULTS");
-		// gd.addMessage("Total particles in this image: " + nParticles);
-		// gd.showDialog();
 	}
 
 	private boolean showDialog() {
 		GenericDialog gd = new GenericDialog("WELCOME TO SPANDEX");
 
-		// default value is 0.00, 2 digits right of the decimal point
-		gd.addNumericField("Sigma: decrease for small particles", 2, 1);
-		gd.addNumericField("Particle threshold: decrease for dim particles", .05, 3);
-		gd.addNumericField("Bare silicon region threshold: increase for dirty chips (?)", 1.3, 1);
+		gd.addNumericField("Size threshold: decrease for small particles", 15, 1);
+		gd.addNumericField("Brightness threshold: decrease for dim particles", 8, 0);
 		gd.addCheckbox("Show intermediate images", false);
-
 		gd.showDialog();
 		if (gd.wasCanceled())
 			return false;
 
-		// get entered values
-		sigma = gd.getNextNumber();
-		particleThreshold = gd.getNextNumber();
-		siThreshold = gd.getNextNumber();
+		// get user values
+		radiusThreshold = gd.getNextNumber();
+		contrastThreshold = gd.getNextNumber();
 		showIntermediateImages = gd.getNextBoolean();
 		return true;
 	}
