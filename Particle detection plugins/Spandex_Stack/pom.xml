@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+		http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>org.scijava</groupId>
+		<artifactId>pom-scijava</artifactId>
+		<version>14.0.0</version>
+		<relativePath />
+	</parent>
+	
+	<groupId>edu.bu.ultra</groupId>
+	<artifactId>Spandex_Stack</artifactId>
+	<version>0.1.0-SNAPSHOT</version>
+
+	<name>Spandex Stack</name>
+	<description>Particle detection for SP-IRIS in an image stack.</description>
+	<url>http://mycompany.com/imagej/process-pixels/</url>
+	<inceptionYear>2017</inceptionYear>
+	<organization>
+		<name>Boston University Biological Sensing and Imaging Lab</name>
+		<url>http://ultra.bu.edu/</url>
+	</organization>
+	<licenses>
+		<license>
+			<name>Simplified BSD License</name>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
+
+	<developers>
+		<developer>
+			<id>derinsevenler</id>
+			<name>Derin Sevenler</name>
+			<url>http://www.derinsevenler.com/</url>
+			<roles>
+				<role>lead</role>
+				<role>developer</role>
+				<role>debugger</role>
+				<role>reviewer</role>
+				<role>support</role>
+				<role>maintainer</role>
+			</roles>
+		</developer>
+	</developers>
+	<contributors>
+		<contributor>
+			<name>Michael Wallace</name>
+		</contributor>
+	</contributors>
+
+	<mailingLists>
+		<mailingList>
+			<name>ImageJ Forum</name>
+			<archive>http://forum.imagej.net/</archive>
+		</mailingList>
+	</mailingLists>
+
+	<scm>
+		<connection>scm:svn:svn://xxx.xxx.xxx.xxx/myproj/trunk</connection>
+		<developerConnection>scm:git:git@github.com:xxx/xxx</developerConnection>
+		<tag>HEAD</tag>
+		<url>https://github.com/xxx/xxx</url>
+	</scm>
+
+	<issueManagement>
+		<system>GitHub Issues</system>
+		<url>https://github.com/derinsevenler/spandex/issues</url>
+	</issueManagement>
+	<ciManagement>
+		<system>None</system>
+	</ciManagement>
+
+	<properties>
+		<package-name>com.mycompany.imagej</package-name>
+		<main-class>edu.bu.ultra.Spandex_Stack</main-class>
+		<license.licenseName>bsd_2</license.licenseName>
+		<license.copyrightOwners>My Company, Inc.</license.copyrightOwners>
+	</properties>
+
+	<dependencies>
+		<dependency>
+			<groupId>net.imagej</groupId>
+			<artifactId>ij</artifactId>
+		</dependency>
+	</dependencies>
+</project>
