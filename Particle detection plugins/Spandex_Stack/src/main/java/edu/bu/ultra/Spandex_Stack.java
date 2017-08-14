@@ -1,3 +1,5 @@
+package edu.bu.ultra;
+
 
 import java.awt.Color;
 import java.util.ArrayList;
@@ -9,7 +11,6 @@ import edu.emory.mathcs.restoretools.iterative.mrnsd.MRNSDDoubleIterativeDeconvo
 import edu.emory.mathcs.restoretools.iterative.mrnsd.MRNSDOptions;
 
 import ij.IJ;
-import ij.ImageJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.Undo;
@@ -17,42 +18,35 @@ import ij.gui.GenericDialog;
 import ij.gui.OvalRoi;
 import ij.gui.Overlay;
 import ij.gui.Roi;
-import ij.io.FileInfo;
-import ij.io.Opener;
 import ij.measure.ResultsTable;
 import ij.plugin.PlugIn;
-import ij.process.ByteProcessor;
 import ij.process.FloatProcessor;
+import ij.process.ImageConverter;
 import ij.process.ImageProcessor;
-import ij.process.ImageStatistics;
-import ij.process.ShortProcessor;
 import ij.plugin.ImageCalculator;
 
 import ij.plugin.filter.RankFilters;
 import inra.ijpb.watershed.*;
-import inra.ijpb.morphology.*;
+//import inra.ijpb.morphology.*;
 
 
 public class Spandex_Stack implements PlugIn {
 	protected ImagePlus image;
 	// image property members
-	private double radiusThreshold;
-	private double contrastTreshold;
+	private int radiusThreshold;
+	private int contrastThreshold;
 	private boolean showIntermediateImages;
-	private String arg;
 	private int imWidth;
 	private int imHeight;
 	private int zSize;
 
-	private ImagePlus rawImgPlus;
-	private ImagePlus nirImagePlus;
+	private ImagePlus rawImgPlus, nirImagePlus, psf, displayImage;
 
 	private FloatProcessor maxVals;
 	private FloatProcessor minVals;
 	private FloatProcessor maxIdx;
 	private FloatProcessor minIdx;
 	private FloatProcessor nirs;
-	private FloatProcessor pps;
 
 	private double[] xPos;
 	private double[] yPos;
@@ -69,11 +63,8 @@ public class Spandex_Stack implements PlugIn {
 	private boolean showIteration;
 	private MRNSDOptions options;
 	
-	private ImagePlus[][] psfa;
-	private String psfp;
-	private boolean tx,twx,fx,ctbool,radbool;
-	private int cctthresh,cthreshrad;
-
+	private ImagePlus[][] psfArr;
+	private String psfPath;
 
 	public void run(String arg) {
 		if (showDialog()) {
@@ -84,16 +75,17 @@ public class Spandex_Stack implements PlugIn {
 
 			psfPath = IJ.getFilePath("Choose PSF File:");
 			psf = IJ.openImage(psfPath);
+			psfArr = new ImagePlus[1][1];
+			psfArr[0][0] = psf;
 
 			nirImagePlus = performPreProcessing();
-			findKeyPoints(nirImagePlus.getStack());
+
+			displayImage = findKeyPoints(nirImagePlus.getStack());
 			if(foundParticle){
 				filterKeyPoints();
 				displayResults();
 			}
-			
 		}
-
 	}
 
 	private ImagePlus performPreProcessing(){
@@ -130,7 +122,7 @@ public class Spandex_Stack implements PlugIn {
 		return niImg;
 	}
 
-	private void findKeyPoints(ImageStack imageStack){
+	private ImagePlus findKeyPoints(ImageStack imageStack){
 		// Find the min and max values and indices
 
 
@@ -160,7 +152,6 @@ public class Spandex_Stack implements PlugIn {
 
 		// Calculate the NIR and PPS
 		nirs = new FloatProcessor(imWidth, imHeight);
-		pps = new FloatProcessor(imWidth, imHeight);
 		float[] nirPixs = (float[]) nirs.getPixels();
 		for (int idx = 0; idx<maxValPixs.length; idx++){
 			nirPixs[idx] = ((float)(maxValPixs[idx]) - (float)(minValPixs[idx]));
@@ -173,7 +164,7 @@ public class Spandex_Stack implements PlugIn {
 		}
 
 		// Perform deconvolution
-		IJ.run(nirPlus, "Gaussian Blur...", "radius=" + (radiusThreshold/10.0));
+		IJ.run(nirPlus, "Gaussian Blur...", "radius=1.5");
 
 		//init options for deconv and do deconv
 		boolean autoStoppingTol = true;
@@ -182,8 +173,16 @@ public class Spandex_Stack implements PlugIn {
 		double threshold = 0;
 		boolean useThreshold = false;
 		options  = new MRNSDOptions(autoStoppingTol,stoppingTol,useThreshold,threshold,logConvergence);
+		
+		preconditioner = IterativeEnums.PreconditionerType.valueOf("FFT");
+		preconditionerTol = -1;
+		boundary = IterativeEnums.BoundaryType.valueOf("REFLEXIVE");
+		resizing = IterativeEnums.ResizingType.valueOf("AUTO");
+		output = Enums.OutputType.valueOf("SAME_AS_SOURCE");
+		maxIters = 9;
+		showIteration = true;
 
-		new MRNSDDoubleIterativeDeconvolver2D(nirPlus, psfa, preconditioner, preconditionerTol, 
+		new MRNSDDoubleIterativeDeconvolver2D(nirPlus, psfArr, preconditioner, preconditionerTol, 
 				boundary, resizing, output, maxIters, showIteration, options);
 
 		// take original
@@ -197,7 +196,7 @@ public class Spandex_Stack implements PlugIn {
 		// convert to 8 bit and apply Local Adaptive Threshold with Bernsen method
 		ImageConverter imconv = new ImageConverter(nirPlus);
 		imconv.convertToGray8();
-		ImagePlus nirPlus1 = Bernsen(nirPlus,threshrad,conthresh,0,true);
+		ImagePlus nirPlus1 = Bernsen(nirPlus,radiusThreshold,contrastThreshold,0,true);
 		ImagePlus showex = nirPlus1.duplicate();
 		if(showIntermediateImages){
 		showex.show();
@@ -213,23 +212,28 @@ public class Spandex_Stack implements PlugIn {
 		}
 
 
-		// Perform thresholding and get keypoints
-		IJ.setThreshold(nirPlus, particleThreshold, 1);
-		IJ.run(nirPlus,"Make Binary","");
-		IJ.run(nirPlus,"Analyze Particles...", "size=0-200 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
-		if (showIntermediateImages){
-			nirPlus.setTitle("Keypoints");
-			nirPlus.show();
-		}
+		// apply watershed threshold
+		double maxval = wshedim.getMax();
+		IJ.setThreshold(wshedimp, .99, maxval);
+		IJ.run(wshedimp,"Make Binary","");
+		ImageProcessor finim = wshedimp.getProcessor();
+		
+		IJ.selectWindow("Log");
+		IJ.run("Close");
+		//init result of morph ops
+		ImagePlus check = new ImagePlus("Particles",finim);
+		//detect particles
+		IJ.run(check,"Analyze Particles...", "size=0-400 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
+
 	
 		ResultsTable resultsTable = ResultsTable.getResultsTable();
 		
 
 		int xCol = resultsTable.getColumnIndex("XStart");
-		if(xCol==resultsTable.COLUMN_NOT_FOUND){
+		if(xCol==ResultsTable.COLUMN_NOT_FOUND){
 			foundParticle=false;
 			IJ.error("No particle is found");
-			return;
+			return nirdisp;
 		}
 
 		int yCol =  resultsTable.getColumnIndex("YStart");
@@ -243,7 +247,7 @@ public class Spandex_Stack implements PlugIn {
 			IJ.selectWindow("ROI Manager");
 			IJ.run("Close");
 		}
-		
+		return nirdisp;
 	}
 
 	private void filterKeyPoints(){
@@ -266,15 +270,10 @@ public class Spandex_Stack implements PlugIn {
 		byte object;
 		byte backg;
 		int temp;
-		// 0 - Check validity of parameters
-		if (null == imp) return null;
-		int xe = ip.getWidth();
-		int ye = ip.getHeight();
-
+		
 		//int [] data = (ip.getHistogram());
 
 		IJ.showStatus("Thresholding...");
-		long startTime = System.currentTimeMillis();
 		//1 Do it
 		if (imp.getStackSize()==1){
 			    ip.snapshot();
@@ -297,12 +296,12 @@ public class Spandex_Stack implements PlugIn {
 		Maximp=implus.duplicate();
 		ipMax=Maximp.getProcessor();
 		RankFilters rf=new RankFilters();
-		rf.rank(ipMax, radius, rf.MAX);// Maximum
+		rf.rank(ipMax, radius, RankFilters.MAX);// Maximum
 		//Maximp.show();
 		ImagePlus implus1 = new ImagePlus("",ip);
 		Minimp=implus1.duplicate();
 		ipMin=Minimp.getProcessor();
-		rf.rank(ipMin, radius, rf.MIN); //Minimum
+		rf.rank(ipMin, radius, RankFilters.MIN); //Minimum
 		//Minimp.show();
 		byte[] pixels = (byte [])ip.getPixels();
 		byte[] max = (byte [])ipMax.getPixels();
@@ -330,9 +329,10 @@ public class Spandex_Stack implements PlugIn {
 			thisParticle.setStrokeColor(Color.red);
 			particleOverlay.add(thisParticle);
 		}
-		rawImgPlus.setOverlay(particleOverlay);
-		IJ.run(rawImgPlus,"Enhance Contrast", "saturated=0.4");
-
+		displayImage.show();
+		displayImage.setOverlay(particleOverlay);
+		IJ.run(displayImage,"Enhance Contrast", "saturated=0.4");
+	
 		// create a resultsTable and put it in the resultsWindow
 		ResultsTable resultsTable = new ResultsTable();
 		for (int n = 0; n<nParticles; n++){
@@ -345,7 +345,7 @@ public class Spandex_Stack implements PlugIn {
 	private boolean showDialog() {
 		GenericDialog gd = new GenericDialog("WELCOME TO SPANDEX");
 
-		gd.addNumericField("Size threshold: decrease for small particles", 15, 1);
+		gd.addNumericField("Size threshold: decrease for small particles", 15, 0);
 		gd.addNumericField("Brightness threshold: decrease for dim particles", 8, 0);
 		gd.addCheckbox("Show intermediate images", false);
 		gd.showDialog();
@@ -353,8 +353,8 @@ public class Spandex_Stack implements PlugIn {
 			return false;
 
 		// get user values
-		radiusThreshold = gd.getNextNumber();
-		contrastThreshold = gd.getNextNumber();
+		radiusThreshold = (int) gd.getNextNumber();
+		contrastThreshold = (int) gd.getNextNumber();
 		showIntermediateImages = gd.getNextBoolean();
 		return true;
 	}
