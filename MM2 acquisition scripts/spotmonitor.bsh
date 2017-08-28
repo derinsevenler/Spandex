@@ -1,0 +1,193 @@
+import ij.gui.*; 
+import ij.IJ;
+import ij.Menus;
+import ij.io.*;
+import ij.plugin.*;
+import ij.plugin.frame.RoiManager;
+import ij.*;
+import java.lang.System;
+import ij.measure.ResultsTable;
+import org.micromanager.data.Datastore;
+import org.micromanager.data.ImageJConverter;
+import org.micromanager.data.Image;
+import org.micromanager.data.*;
+
+mm.live().setLiveMode(false);
+mm.acquisitions().clearRunnables();
+mm.data().clearPipeline();
+
+directoryC = new DirectoryChooser("Choose the save directory:");
+saveDir = directoryC.getDirectory();
+
+GenericDialog gd = new GenericDialog("Welcome to the Spot Intensity Monitor (SIM)");
+gd.addStringField("Filename:","");
+gd.addNumericField("Delay between images (sec):",10,0);
+gd.addNumericField("Frames to average",50,0);
+String[] substrates = {"100nm SiO2 - Oxide","200nm Si3N4 - Nitride","All Colors"};
+gd.addChoice("Substrate/Color Mode",substrates,"Choose a Substrate");
+gd.addNumericField("Number of spots (Max: 3):",1,0);
+gd.showDialog(); 
+if (gd.wasCanceled()) return;
+fn = gd.getNextString();
+delay = gd.getNextNumber();
+avgframes = gd.getNextNumber();
+substrate = gd.getNextChoice();
+spotsno = gd.getNextNumber();
+	switch (substrate){
+		case "100nm SiO2 - Oxide":
+			String[] channels = {"Blue"};
+		case "200nm Si3N4 - Nitride":
+			String[] channels = {"Yellow","Red"};
+		case "All Colors":
+			String[] channels = {"Blue","Yellow","Red","Orange"};
+	}
+// Acquire and save first image before ROI chosen
+mmc.waitForSystem();
+mmc.snapImage();
+tmp = mmc.getTaggedImage();
+image = mm.data().convertTaggedImage(tmp);
+converter = mm.data().getImageJConverter();
+ip = converter.createProcessor(image);
+w = ip.getWidth();
+h = ip.getHeight();
+ImagePlus disp = new ImagePlus("Experiment");
+timestack = new ImageStack(w,h);
+timestack.addSlice(ip);
+disp.setStack(timestack);
+disp.show();
+// make user define rois
+IJ.run("ROI Manager...");
+RoiManager rm = RoiManager.getInstance();
+GenericDialog gd1 = new GenericDialog("Select ROIs with ROI manager");
+gd1.addMessage("1st: Reference ROI (bare Si region)");
+gd1.addMessage("2nd: Background ROI (region near spot)");
+gd1.addMessage("3rd: Spot ROI (spot region)");
+gd1.addMessage("For each additional spot 1st select a background ROI and then a spot ROI.");
+gd1.showDialog();
+while(rm.getCount()<3){
+	Thread.sleep(250);
+}
+//launch roimonitor
+//IJ.run("roiMonitor","#="+spotsno);
+IJ.run("roiMonitor");
+// ---------------------------------------------------------------------------------
+// PERFORM ACQUISITION
+// ---------------------------------------------------------------------------------
+
+
+//init acq settings
+t0ms = System.currentTimeMillis();
+exptRunning = true;
+
+while (exptRunning){
+	curTimeSeconds = (System.currentTimeMillis()/1000.0) - (t0ms/1000.0);
+while (curTimeSeconds<25){
+	curTimeSeconds = (System.currentTimeMillis()/1000.0) - (t0ms/1000.0);
+	//get image
+	mmc.waitForSystem();
+	switch (substrate){
+		case "100nm SiO2 - Oxide":
+			mmc.waitForSystem();
+			exposureMs = mmc.getExposure();
+			store = mm.data().createRAMDatastore();
+			mmc.startContinuousSequenceAcquisition(0);
+			builder = mm.data().getCoordsBuilder().z(0).channel(0).stagePosition(0);
+   		mmc.setConfig("Channel", Color.BLUE);
+			int curFrame = 0;
+			while ( curFrame < avgframes ){
+				if (mmc.getRemainingImageCount() > 0) {
+			      tagged = mmc.popNextTaggedImage();
+			      image = mm.data().convertTaggedImage(tagged,
+			      builder.time(curFrame).build(), null);
+			      store.putImage(image);
+			      curFrame++;
+			   }
+			   else {
+			      // Wait for another image to arrive.
+			      Thread.sleep((int) Math.round(Math.min(.5 * exposureMs, 20)));
+			   }
+			}
+			mmc.stopSequenceAcquisition();
+			disp1 = mm.displays().createDisplay(store);
+			Thread.sleep(100);
+			imp = IJ.getImage();
+			IJ.run(imp, "Z Project...", "projection=[Average Intensity]");
+			disp1.forceClosed();
+			imp.close();
+			avgFr = IJ.getImage();
+			avip = avgFr.getProcessor();
+			avgFr.close();
+		case "200nm Si3N4 - Nitride":
+			mmc.waitForSystem();
+			exposureMs = mmc.getExposure();
+			store = mm.data().createRAMDatastore();
+			mmc.startContinuousSequenceAcquisition(0);
+			builder = mm.data().getCoordsBuilder().z(0).channel(0).stagePosition(0);
+			mmc.setConfig("LEDs",".Off");
+			Thread.sleep(15);
+			mmc.setConfig("LEDs",channels[0]);
+			int curFrame = 0;
+			while ( curFrame < avgframes ){
+				if (mmc.getRemainingImageCount() > 0) {
+			      tagged = mmc.popNextTaggedImage();
+			      image = mm.data().convertTaggedImage(tagged,
+			      builder.time(curFrame).build(), null);
+			      store.putImage(image);
+			      curFrame++;
+			   }
+			   else {
+			      // Wait for another image to arrive.
+			      Thread.sleep((int) Math.round(Math.min(.5 * exposureMs, 20)));
+			   }
+			}
+			mmc.stopSequenceAcquisition();
+			disp1 = mm.displays().createDisplay(store);
+			Thread.sleep(100);
+			imp = IJ.getImage();
+			IJ.run(imp, "Z Project...", "projection=[Average Intensity]");
+			disp1.forceClosed();
+			imp.close();
+			avgFr = IJ.getImage();
+			avip = avgFr.getProcessor();
+			avgFr.close();
+		case "All Colors":
+			mmc.waitForSystem();
+			exposureMs = mmc.getExposure();
+			store = mm.data().createRAMDatastore();
+			mmc.startContinuousSequenceAcquisition(0);
+			builder = mm.data().getCoordsBuilder().z(0).channel(0).stagePosition(0);
+			mmc.setConfig("LEDs",".Off");
+			Thread.sleep(15);
+			mmc.setConfig("LEDs",channels[0]);
+			int curFrame = 0;
+			while ( curFrame < avgframes ){
+				if (mmc.getRemainingImageCount() > 0) {
+			      tagged = mmc.popNextTaggedImage();
+			      image = mm.data().convertTaggedImage(tagged,
+			      builder.time(curFrame).build(), null);
+			      store.putImage(image);
+			      curFrame++;
+			   }
+			   else {
+			      // Wait for another image to arrive.
+			      Thread.sleep((int) Math.round(Math.min(.5 * exposureMs, 20)));
+			   }
+			}
+			mmc.stopSequenceAcquisition();
+			disp1 = mm.displays().createDisplay(store);
+			Thread.sleep(100);
+			imp = IJ.getImage();
+			IJ.run(imp, "Z Project...", "projection=[Average Intensity]");
+			disp1.forceClosed();
+			imp.close();
+			avgFr = IJ.getImage();
+			avip = avgFr.getProcessor();
+			avgFr.close();
+	}
+	timestack.addSlice(avip);
+	disp.setStack(timestack);
+	disp.setPosition(disp.getStackSize());
+   IJ.wait((int) delay*1000);
+}
+exptRunning = false;
+}

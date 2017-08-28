@@ -115,28 +115,24 @@ switch (objLongName.substring(0,3)) {
 		zStepUm = 3;
 		objNA = 0.3;
 		objMag = 10;
-		pmag=10;
 		break;
 	case "20x":
 		zStackWidthUm = 24;
 		zStepUm = 1.5;
 		objNA = 0.45;
 		objMag = 20;
-		pmag=20;
 		break;
 	case "40x":
 		zStackWidthUm = 8;
 		zStepUm = .2;
 		objNA = 0.9;
 		objMag = 40;
-		pmag=50;
 		break;
 	case "50x":
 		zStackWidthUm = 8;
 		zStepUm = .2;
 		objNA = 0.8;
 		objMag = 50;
-		pmag=50;
 		break;
 }
 nZPos = zStackWidthUm/zStepUm;
@@ -342,8 +338,8 @@ for (int idx=0; idx<nPosX; idx++){
 		// Perform Particle detection -------------------------------------------
 		ImagePlus stackPlus = new ImagePlus("current Z stack", thisZStack);
 		// stackPlus.show();
-		//IJ.run(stackPlus,"Spandex stack", "sigma=" + kernelSigma + " particle=" + particleBrightnessThreshold + " bare=" + 1.3);
-		IJ.run(stackPlus,"Spandex", "sigma=1.5 contrast=0 thresholding=0 " + pmag + "x choose=[D:\\User_Scratch\\psf.tif]");
+		IJ.run(stackPlus,"Spandex stack", "sigma=" + kernelSigma + " particle=" + particleBrightnessThreshold + " bare=" + 1.3);
+
 		// Save Particle Positions -------------------------------------------
 		IJ.renameResults("Particle Results","Results");
 		resultsTable = ResultsTable.getResultsTable();
