@@ -215,12 +215,18 @@ startY = startXY.getY();
 afMgmt = mm.getAutofocusManager();
 afMgmt.setAutofocusMethodByName("JAF(TB)");
 af = afMgmt.getAutofocusMethod();
-af.setPropertyValue("1st step size", "" +(zStepUm*10));
-af.setPropertyValue("1st setp number", "" + 10); // note typo in API
-af.setPropertyValue("2nd step size", "" + (zStepUm*2));
-af.setPropertyValue("2nd step size", "" + 10);
+af.setPropertyValue("1st step size", "" + 5);
+af.setPropertyValue("1st setp number", "" + 16); // note typo in API
+af.setPropertyValue("2nd step size", "" + 1);
+af.setPropertyValue("2nd step number", "" + 10);
 af.setPropertyValue("Threshold", "" + .5);
 af.setPropertyValue("Crop ratio", "" + 1);
+// af.setPropertyValue("1st step size", "" +(zStepUm*3));
+// af.setPropertyValue("1st setp number", "" + 10); // note typo in API
+// af.setPropertyValue("2nd step size", "" + (zStepUm));
+// af.setPropertyValue("2nd step number", "" + 10);
+// af.setPropertyValue("Threshold", "" + .5);
+// af.setPropertyValue("Crop ratio", "" + 1);
 
 
 IJ.log("top left...");
