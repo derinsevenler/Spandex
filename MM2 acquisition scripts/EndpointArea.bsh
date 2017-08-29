@@ -224,23 +224,23 @@ af.setPropertyValue("Crop ratio", "" + 1);
 
 
 IJ.log("top left...");
-// af.fullFocus();
+af.fullFocus();
 topLeftZ = mmc.getPosition(); // we should already be in focus here.
 IJ.log("Top Right:");
 mmc.setXYPosition(startX-1000.0*fieldSizeXmm, startY);
-// af.fullFocus();
+af.fullFocus();
 topRightZ = mmc.getPosition();
 IJ.log("Bottom Left:");
 mmc.setXYPosition(startX, startY-1000.0*fieldSizeYmm);
-// af.fullFocus();
+af.fullFocus();
 botLeftZ = mmc.getPosition(); // we should already be in focus here.
 IJ.log("Bottom Right:");
 mmc.setXYPosition(startX-1000.0*fieldSizeXmm, startY-1000.0*fieldSizeYmm);
-// af.fullFocus();
+af.fullFocus();
 botRightZ = mmc.getPosition();
 
 mmc.setXYPosition(startX,startY);
-Thread.sleep(10000);
+Thread.sleep(1000);
 
 // ---------------------------------------------------------------------------------
 // SCANNING
@@ -343,7 +343,7 @@ for (int idx=0; idx<nPosX; idx++){
 		ImagePlus stackPlus = new ImagePlus("current Z stack", thisZStack);
 		// stackPlus.show();
 		//IJ.run(stackPlus,"Spandex stack", "sigma=" + kernelSigma + " particle=" + particleBrightnessThreshold + " bare=" + 1.3);
-		IJ.run(stackPlus,"Spandex", "sigma=1.5 contrast=0 thresholding=0 " + pmag + "x choose=[D:\\User_Scratch\\psf.tif]");
+		IJ.run(stackPlus,"Spandex", "sigma=1.5 contrast=0 thresholding=0 " + pmag + "x choose=[D:\\User_Scratch\\nir_psf.tif]");
 		// Save Particle Positions -------------------------------------------
 		IJ.renameResults("Particle Results","Results");
 		resultsTable = ResultsTable.getResultsTable();
