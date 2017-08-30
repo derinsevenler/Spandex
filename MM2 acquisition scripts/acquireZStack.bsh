@@ -53,7 +53,7 @@ gd.addNumericField("Step size (microns)", 0.5,2);
 
 gd.showDialog(); 
 if (gd.wasCanceled()) 
-return false; 
+	return false; 
 
 // Get Inputs
 saveDir = gd.getNextString();
@@ -101,54 +101,36 @@ bitDepth = mmc.getImageBitDepth();
 thisZ = mmc.getPosition();
 zStart = thisZ-zStackWidthUm/2;
 ImageStack thisZStack = new ImageStack((int)imWidth, (int)imHeight, (int)nZPos);
+
+ImageStack burstStack = new ImageStack((int)imWidth, (int) imHeight, (int)burstFrameNo);
+ImagePlus burstImp = new ImagePlus("burst", burstStack);
 for (int zidx=0; zidx< nZPos; zidx++) {
 	mmc.setPosition(zStart+zidx*zStepUm);
+	mmc.stopSequenceAcquisition();
+	mmc.clearCircularBuffer();
 	mmc.waitForSystem();
 
-	// image = mm.live().snap(false).get(0);
-	// thisZStack.setPixels(image.getRawPixels(), zidx+1);
-
-	// Acquire a burst of images
-	exposureMs = mmc.getExposure();
-	// Create a Datastore for the images to be stored in, in RAM.
-	store = mm.data().createRAMDatastore();
-	// disp = mm.displays().createDisplay(store);
 	mmc.startContinuousSequenceAcquisition(0);
-	// Set up a Coords.CoordsBuilder for applying coordinates to each image.
-	builder = mm.data().getCoordsBuilder().z(0).channel(0).stagePosition(0);
-	int curFrame = 0;
+	curFrame = 0;
 	while ( curFrame < burstFrameNo ){
-	// while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
-	   if (mmc.getRemainingImageCount() > 0) {
-	      tagged = mmc.popNextTaggedImage();
-	      // Convert to an Image at the desired timepoint.
-	      image = mm.data().convertTaggedImage(tagged,
-	         builder.time(curFrame).build(), null);
-	      store.putImage(image);
-	      curFrame++;
-	   }
-	   else {
-	      // Wait for another image to arrive.
-	      Thread.sleep((int) Math.round(Math.min(.5 * exposureMs, 20)));
-	   }
+		if (mmc.getRemainingImageCount() > 0) {
+			burstStack.setPixels(mmc.popNextImage(),curFrame+1);
+			curFrame++;
+		}
+		else {
+			// Wait for another image to arrive.
+			Thread.sleep((int) Math.round(Math.min(.5 * exposureMs, 20)));
+		}
 	}
 	mmc.stopSequenceAcquisition();
-	disp = mm.displays().createDisplay(store);
-	Thread.sleep(100);
-	imp = IJ.getImage();
-	zProjector = new ZProjector(imp);
-	zProjector.setMethod(0);
+	mmc.clearCircularBuffer();
+
+	burstImp.setStack(burstStack);
+	zProjector.setImage(burstImp);
+	
 	zProjector.doProjection();
 	thisZStack.setPixels(zProjector.getProjection().getProcessor().getPixels(), zidx+1);
 
-	// IJ.run(burstImp, "Z Project...", "projection=[Average Intensity]");
-	// avgFr = IJ.getImage();
-	// thisZStack.setPixels(avgFr.getProcessor().getPixels(), zidx+1);
-	// avgFr.close();
-	disp.forceClosed();
-	imp.close();
-	store.close();
-	mm.acquisitions().clearRunnables();
 }
 mmc.setPosition(thisZ); // move back to the middle position
 mmc.waitForSystem();
