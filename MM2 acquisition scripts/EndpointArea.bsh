@@ -10,6 +10,7 @@ import ij.*;
 // import ij.ImageStack;
 // import ij.ImageProcessor;
 import ij.measure.ResultsTable;
+import ij.process.ImageStatistics;
 
 // log = mm.getLogManager();
 initExp = mmc.getExposure();
@@ -99,6 +100,9 @@ if (gd2.wasCanceled())
 
 combiner = new StackCombiner();
 ic = new ImageCalculator();
+is = new ImageStatistics();
+statOptions = is.MEDIAN;
+
 // zProjector = new ZProjector();
 // zProjector.setMethod(0);
 
@@ -230,19 +234,19 @@ af.setPropertyValue("Crop ratio", "" + 1);
 
 
 IJ.log("top left...");
-af.fullFocus();
+// af.fullFocus();
 topLeftZ = mmc.getPosition(); // we should already be in focus here.
 IJ.log("Top Right:");
 mmc.setXYPosition(startX-1000.0*fieldSizeXmm, startY);
-af.fullFocus();
+// af.fullFocus();
 topRightZ = mmc.getPosition();
 IJ.log("Bottom Left:");
 mmc.setXYPosition(startX, startY-1000.0*fieldSizeYmm);
-af.fullFocus();
+// af.fullFocus();
 botLeftZ = mmc.getPosition(); // we should already be in focus here.
 IJ.log("Bottom Right:");
 mmc.setXYPosition(startX-1000.0*fieldSizeXmm, startY-1000.0*fieldSizeYmm);
-af.fullFocus();
+// af.fullFocus();
 botRightZ = mmc.getPosition();
 
 mmc.setXYPosition(startX,startY);
@@ -281,6 +285,10 @@ for (int idx=0; idx<nPosX; idx++){
 		imp = new ImagePlus(saveDir, ip);
 		IJ.run(imp,"Fast Filters", "link filter=median x=15 y=15 preprocessing=none subtract offset=32768");
 		IJ.run(imp,"8-bit","");
+		// Rescale to improve background homogneity
+		myStats = is.getStatistics(imp.getProcessor(), statOptions, imp.getCalibration());
+		myMedian = myStats.median;
+		IJ.run(imp,"Add...", "value=" + (125 - myMedian));
 		// imp.show();
 		// Add this to the preview slice
 		if (idy == 0) {

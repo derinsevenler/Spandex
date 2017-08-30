@@ -29,9 +29,9 @@ xyInImg = [(XY(:,1))/umPerPixel+1 , (-XY(:,2))/umPerPixel+1];
 f1 = figure; hold on;
 imshow(img, median(double(img(:)))*[0.9, 1.1]);
 title('Please click the center of the top-left spot');
-set(selectFig, 'ToolBar','figure');
+set(f1, 'ToolBar','figure');
 [startx, starty] = ginput(1);
-close(f2);
+close(f1);
 % hold on; plot(xyInImg(:,1), xyInImg(:,2), '*');
 
 selectFig = figure; hold on;

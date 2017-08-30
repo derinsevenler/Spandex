@@ -60,7 +60,7 @@ Formats(3,2).format = 'float';
 Formats(3,2).size = [40 20];
 DefAns.camera_pixel_pitch_um = 3.45;
 
-set(0, 'DefaultUIControlFontSize', 16); % increase font size for readability
+% set(0, 'DefaultUIControlFontSize', 14); % increase font size for readability
 [Answer,Cancelled] = inputsdlg(Prompt,Title,Formats,DefAns,Options);
 
 end
