@@ -364,6 +364,12 @@ acquisitionLoop: {
 				zProjector.setImage(burstImp);
 				zProjector.doProjection();
 				thisZStack.setPixels(zProjector.getProjection().getProcessor().getPixels(), zidx+1);
+				if(didCancel){
+					break;
+				}
+			}
+			if(didCancel){
+				break;
 			}
 
 			// Perform Particle detection -------------------------------------------
@@ -386,12 +392,11 @@ acquisitionLoop: {
 			IJ.run("Close");
 
 			// Check in with UI
+			if(didCancel){
+				break;
+			}
 			pctComplete = Math.round( (idx*nPosY+idy+1)*100/(nPosX*nPosY) );
 			progressbar.setValue((int)pctComplete);
-			if(didCancel){
-				notification.setText("Canceling...");
-				break acquisitionLoop;
-			}
 		}
 
 		// Add the preview 'slice' to the 'final preview'
@@ -403,6 +408,9 @@ acquisitionLoop: {
 			// finalImp.close();
 			// thisSlice.close();
 			finalImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
+		}
+		if(didCancel){
+			break;
 		}
 	}
 	scanLabel.setText("\u2611 3. Array Scanning");
