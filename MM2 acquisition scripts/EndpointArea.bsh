@@ -140,7 +140,8 @@ switch (objLongName.substring(0,3)) {
 		break;
 }
 nZPos = zStackWidthUm/zStepUm;
-burstFrameNo = 16; // frames to average at each z-position
+// Point Grey camera issue: the first frame is always blank.
+burstFrameNo = 16 + 1; // frames to average at each z-position 
 
 // Set microscope configuration and get image scale factors
 mm.setExposure(exposureTime);
@@ -345,7 +346,8 @@ acquisitionLoop: {
 				mmc.clearCircularBuffer();
 				mmc.waitForSystem();
 
-				mmc.startContinuousSequenceAcquisition(0);
+				mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
+				mmc.startContinuousSequenceAcquisition(exposureTime/10.0);
 				curFrame = 0;
 				while ( curFrame < burstFrameNo ){
 					if (mmc.getRemainingImageCount() > 0) {
@@ -360,6 +362,8 @@ acquisitionLoop: {
 				mmc.stopSequenceAcquisition();
 				mmc.clearCircularBuffer();
 
+				// Point Grey camera issue: the first frame is always blank.
+				burstStack.deleteSlice(1);
 				burstImp.setStack(burstStack);
 				zProjector.setImage(burstImp);
 				zProjector.doProjection();
