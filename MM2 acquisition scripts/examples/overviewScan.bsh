@@ -1,0 +1,285 @@
+
+import ij.gui.*; 
+import ij.IJ;
+import ij.Menus;
+import ij.io.*;
+import ij.plugin.*;
+import ij.*;
+
+import ij.ImagePlus;
+import ij.ImageStack;
+import ij.process.ShortProcessor;
+import ij.measure.ResultsTable;
+import ij.process.ImageStatistics;
+
+// ---------------------------------------------------------------------------------
+// INITIALIZATION
+// ---------------------------------------------------------------------------------
+
+initExposureTime = mmc.getExposure();
+initObjective = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
+
+String[] objectiveArray = new String[4]; 
+objectiveArray[0]="10x   "; 
+objectiveArray[1]="20x   "; 
+objectiveArray[2]="40x   "; 
+objectiveArray[3]="50x   ";
+
+
+// ---------------------------------------------------------------------------------
+// GENERATE CHIP OVERVIEW
+// ---------------------------------------------------------------------------------
+
+GenericDialog overviewDialog = new GenericDialog("1. Generate Chip Overview");
+overviewDialog.addMessage("Ensure you are focused at the top-left corner of scan region, and ");
+overviewDialog.addMessage("the polarization optics are set to : 0 (Left-most), 60 (second on left), 351 (lower on right), 0 (upper on right).");
+overviewDialog.addMessage("");
+overviewDialog.addMessage("Overview region size in millimeters:");
+overviewDialog.addNumericField("X", 3,1);
+overviewDialog.addNumericField("Y", 8,1);
+overviewDialog.addRadioButtonGroup("Objective",objectiveArray,1,4, initObjective + "   "); 
+
+overviewDialog.showDialog();
+if (overviewDialog.wasCanceled())
+	return false;
+
+overviewX = overviewDialog.getNextNumber();
+overviewY = overviewDialog.getNextNumber();
+objLongName = overviewDialog.getNextRadioButton();
+
+// Set the z-stack properties depending on the objective
+// Note that properties scale roughly with the NA, not the magnification
+// TODO: consider changing for dry media
+zStackWidthUm = 0;zStepUm = 0.0;objNA = 0.0;objMag = 0;
+switch (objLongName.substring(0,3)) {
+	case "10x":
+		zStackWidthUm = 48;
+		zStepUm = 3;
+		objNA = 0.3;
+		objMag = 10;
+		break;
+	case "20x":
+		zStackWidthUm = 24;
+		zStepUm = 1.5;
+		objNA = 0.45;
+		objMag = 20;
+		break;
+	case "40x":
+		zStackWidthUm = 8;
+		zStepUm = .2;
+		objNA = 0.9;
+		objMag = 40;
+		break;
+	case "50x":
+		zStackWidthUm = 8;
+		zStepUm = .2;
+		objNA = 0.8;
+		objMag = 50;
+		break;
+}
+nZPos = zStackWidthUm/zStepUm;
+// Point Grey camera issue: the first frame is always blank.
+burstFrameNo = 16 + 1; // frames to average at each z-position 
+
+// Set microscope configuration and get image scale factors
+//mm.setExposure(exposureTime);
+mmc.setConfig("Objective",objLongName.substring(0,3));
+imWidth = mmc.getImageWidth();
+imHeight = mmc.getImageHeight();
+pixelSizeUm = mmc.getPixelSizeUm();
+fieldOfViewXmm = imWidth*pixelSizeUm/1000.0;
+fieldOfViewYmm = imHeight*pixelSizeUm/1000.0;
+nPosX = Math.ceil(overviewX / fieldOfViewXmm);
+nPosY = Math.ceil(overviewY / fieldOfViewYmm);
+
+// Prepare Progress panel
+JFrame progressFrame = new JFrame("Acquisition Progress");
+
+Font boldFont = new Font("Deja Vu MS", Font.BOLD, 14);
+Font normalFont = new Font("Deja Vu MS", Font.PLAIN, 14);
+
+GridLayout layout = new GridLayout(0,1, 20, 0);
+layout.setHgap(0);
+layout.setVgap(25);
+JPanel progressPanel = new JPanel();
+progressPanel.setLayout(layout);
+JLabel setupLabel = new JLabel("\u2611 1. Setup");
+setupLabel.setFont(boldFont);
+progressPanel.add(setupLabel);
+JLabel initLabel = new JLabel("\u2610 2. Overview scan");
+initLabel.setFont(normalFont);
+progressPanel.add(initLabel);
+
+// scan panel
+JPanel scanPanel = new JPanel();
+GridLayout scanLayout = new GridLayout(1, 0, 0, 20);
+scanPanel.setLayout(scanLayout);
+JLabel scanLabel = new JLabel("\u2610 3. Array Scan");
+scanLabel.setFont(normalFont);
+scanPanel.add(scanLabel);
+JProgressBar progressbar = new JProgressBar(0, 100);
+progressbar.setStringPainted(true);
+scanPanel.add(progressbar);
+progressPanel.add(scanPanel);
+
+progressPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+progressFrame.getContentPane().add(progressPanel, BorderLayout.NORTH);
+
+JPanel botPanel = new JPanel(); //bottom panel
+botPanel.setLayout(new GridLayout(0,1,0,0));
+JPanel buttonPanel = new JPanel();
+buttonPanel.setLayout(new GridLayout(1,2,20,20));
+JButton pauseButton = new JButton("Pause");
+pauseButton.setEnabled(false); // <-- TODO: implement pause functionality
+didPause = false;
+pauseButton.addActionListener(new ActionListener() {
+	actionPerformed (e) {
+		didPause = true;
+		notification.setText("Acqusition paused");
+	}
+});
+buttonPanel.add(pauseButton);
+JButton cancelButton = new JButton("Cancel");
+didCancel = false;
+cancelButton.addActionListener(new ActionListener() {
+	actionPerformed (e) {
+		didCancel = true;
+		notification.setText("Cancelling, please wait...");
+	}
+});
+buttonPanel.add(cancelButton);
+JLabel notification = new JLabel("", SwingConstants.CENTER);
+notification.setFont(boldFont);
+
+botPanel.add(buttonPanel);
+botPanel.add(notification);
+
+botPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+progressFrame.getContentPane().add(botPanel, BorderLayout.SOUTH);
+
+progressFrame.pack();
+progressFrame.setSize(300, 250);
+progressFrame.setLocation(100,100);
+progressFrame.setVisible(true);
+progressFrame.setResizable(false);
+
+
+combiner = new StackCombiner();
+ic = new ImageCalculator();
+is = new ImageStatistics();
+statOptions = is.MEDIAN;
+
+zProjector = new ZProjector();
+zProjector.setMethod(0);
+
+// Prepare for acquisition
+mm.live().setLiveMode(false);
+liveDisplay = mm.live().getDisplay();
+if (liveDisplay != null){
+	liveDisplay.forceClosed();
+}
+mm.data().clearPipeline(); // i.e., 'on-the-fly' processors
+
+
+// Perform rapid overview scan
+startX = mmc.getXYStagePosition().getX();
+startY = mmc.getXYStagePosition().getY();
+ImageStack burstStack = new ImageStack((int)imWidth, (int) imHeight, 2);
+ImagePlus finalImp;
+ImagePlus thisSlice; // declaration is required for correct scope
+
+for (int idx=0; idx<nPosX; idx++){
+	thisX = startX - idx*fieldOfViewXmm*1000;
+	mmc.setXYPosition(thisX, startY);
+	Thread.sleep(1000);
+	for (int idy=0; idy<nPosY; idy++){
+		thisY = startY - idy*fieldOfViewYmm*1000;
+		mmc.setXYPosition(thisX, thisY);
+		Thread.sleep(300);
+
+		mmc.stopSequenceAcquisition();
+		mmc.clearCircularBuffer();
+		mmc.waitForSystem();
+		
+		mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
+		mmc.startSequenceAcquisition(2,0,true);
+		while(mmc.getRemainingImageCount() < 2 ){
+			Thread.sleep(5);
+		}
+		mmc.popNextImage();
+ 		ip = new ShortProcessor((int)imWidth, (int)imHeight);
+ 		ip.setPixels(mmc.popNextImage());
+ 		imp = new ImagePlus("frame", ip);
+ 		
+		if (idy == 0) {
+ 			thisSlice = imp.duplicate();
+ 		} else {
+ 			combinedStack = combiner.combineVertically(thisSlice.getStack(), imp.getStack());
+ 			thisSlice = new ImagePlus("slice", combinedStack);
+ 		}
+	}
+ 	// Add the preview 'slice' to the 'final preview'
+ 	if ( idx == 0){
+ 		finalImp = thisSlice;
+ 	} else {
+ 		combinedSlices = combiner.combineHorizontally(finalImp.getStack(), thisSlice.getStack());
+ 		// finalImp.close();
+ 		// thisSlice.close();
+ 		finalImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
+ 	}
+	if(didCancel){
+		break;
+	}
+}
+mmc.setXYPosition(startX, startY);
+initLabel.setText("\u2611 2. Overview Scan");
+initLabel.setFont(boldFont);
+
+// Get ROI from user
+
+finalImp.show();
+
+JFrame roiSelectFrame = new JFrame("Maje");
+
+JLabel setupLabel = new JLabel("Adjust the scan region.");
+setupLabel.setFont(normalFont);
+roiSelectFrame.getContentPane().add(setupLabel, BorderLayout.NORTH);
+
+JPanel roiButtonPanel = new JPanel(); //button panel
+roiButtonPanel.setLayout(new GridLayout(0,1,0,0));
+JPanel buttonPanel = new JPanel();
+buttonPanel.setLayout(new GridLayout(1,2,20,20));
+JButton pauseButton = new JButton("Pause");
+pauseButton.setEnabled(false); // <-- TODO: implement pause functionality
+didPause = false;
+pauseButton.addActionListener(new ActionListener() {
+	actionPerformed (e) {
+		didPause = true;
+		notification.setText("Acqusition paused");
+	}
+});
+buttonPanel.add(pauseButton);
+JButton cancelButton = new JButton("Cancel");
+didCancel = false;
+cancelButton.addActionListener(new ActionListener() {
+	actionPerformed (e) {
+		didCancel = true;
+		notification.setText("Cancelling, please wait...");
+	}
+});
+buttonPanel.add(cancelButton);
+JLabel notification = new JLabel("", SwingConstants.CENTER);
+notification.setFont(boldFont);
+
+roiButtonPanel.add(buttonPanel);
+roiButtonPanel.add(notification);
+
+roiButtonPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+roiSelectFrame.getContentPane().add(roiButtonPanel, BorderLayout.SOUTH);
+
+
+roiSelectFrame.pack();
+roiSelectFrame.setSize(250, 200);
+roiSelectFrame.setLocation(300,300);
+roiSelectFrame.setVisible(true);
+roiSelectFrame.setResizable(false);
