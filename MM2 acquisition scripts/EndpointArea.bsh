@@ -12,106 +12,52 @@ import ij.*;
 import ij.measure.ResultsTable;
 import ij.process.ImageStatistics;
 
-// log = mm.getLogManager();
-initExp = mmc.getExposure();
-
 // ---------------------------------------------------------------------------------
-// GET SETTINGS FROM USER
+// INITIALIZATION
 // ---------------------------------------------------------------------------------
- 
-directoryC = new DirectoryChooser("Choose the save directory:");
-directoryC.setDefaultDirectory("D:\\User_Scratch");
-saveDir = directoryC.getDirectory();
 
+initExposureTime = mmc.getExposure();
+initObjective = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
 
 String[] objectiveArray = new String[4]; 
 objectiveArray[0]="10x   "; 
 objectiveArray[1]="20x   "; 
 objectiveArray[2]="40x   "; 
 objectiveArray[3]="50x   ";
-String[] mediaArray = new String[2]; 
-mediaArray[0]="dry   "; 
-mediaArray[1]="wet   "; 
-String[] npArray = new String[2]; 
-npArray[0]="bio-nps   "; 
-npArray[1]="nanorod   ";
-
-GenericDialog gd = new GenericDialog("Endpoint Whole Area Particle Counting");
-
-gd.addStringField("Save Directory:",saveDir, 30);
-gd.addStringField("Chip Name","chip" ,15); 
-gd.addMessage("");
-gd.addNumericField("field size X (mm)", 1.5,1);
-gd.addNumericField("field size Y (mm)", 1.5,1);
-gd.addMessage("");
-gd.addNumericField("Exposure time",initExp, 2);
-gd.addMessage("");
-
-// ???
-curObj = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
-gd.addRadioButtonGroup("Select the Objective",objectiveArray,1,4, curObj + "   "); 
-gd.addMessage("");
-gd.addRadioButtonGroup("Select media",mediaArray,1,2,"wet   "); 
-gd.addMessage("");
-gd.addRadioButtonGroup("Nanoparticle",npArray,1,3,"nanorod   "); 
-
-
-gd.showDialog(); 
-if (gd.wasCanceled()) 
-return false; 
-
-// Get Inputs
-saveDir = gd.getNextString();
-saveFname = gd.getNextString();
-fieldSizeXmm = gd.getNextNumber();
-fieldSizeYmm = gd.getNextNumber();
-exposureTime = gd.getNextNumber();
-objLongName = gd.getNextRadioButton();
-immersionMedia = gd.getNextRadioButton(); 
-nanoparticle = gd.getNextRadioButton(); 
-
 
 
 // ---------------------------------------------------------------------------------
-// CONFIGURATION & SETUP
+// GENERATE CHIP OVERVIEW
 // ---------------------------------------------------------------------------------
 
-// Figure out the correct polarizer settings
-// For viruses, do not use polarization
-linPol1 = 0;
-// These must be initialized outside the conditional for proper scope
-qwp1 = 0; qwp2 = 0; linPol2 = 0;
-if (nanoparticle.equals("bio-nps   ")){ 
-	// turn polarization off
-	qwp1 = 60;
-	qwp2 = 351;
-	linPol2 = 0;
-} else { // we are looking at nanorods
-	qwp1 = 15;
-	qwp2 = 40;
-	linPol2 = 60;
-}
-GenericDialog gd2 = new GenericDialog("Endpoint Whole Area Particle Counting");
-gd2.addMessage("Ensure you are focused at the top-left corner of scan region, and ");
-gd2.addMessage("the polarization optics are set to : " + linPol1 + " (Left-most), " + qwp1 + " (second on left), " + qwp2 + " (lower on right), " +  linPol2 + " (upper on right).");
-gd2.showDialog();
-if (gd2.wasCanceled())
+GenericDialog overviewDialog = new GenericDialog("1. Generate Chip Overview");
+overviewDialog.addMessage("Ensure you are focused at the top-left corner of scan region, and ");
+overviewDialog.addMessage("the polarization optics are set to : 0 (Left-most), 60 (second on left), 351 (lower on right), 0 (upper on right).");
+overviewDialog.addMessage("");
+overviewDialog.addMessage("Overview region size in millimeters:");
+overviewDialog.addNumericField("X", 3,1);
+overviewDialog.addNumericField("Y", 8,1);overviewDialog.showDialog();
+overviewDialog.addRadioButtonGroup("Objective",objectiveArray,1,4, initObjective + "   "); 
+
+if (overviewDialog.wasCanceled())
 	return false;
 
-combiner = new StackCombiner();
-ic = new ImageCalculator();
-is = new ImageStatistics();
-statOptions = is.MEDIAN;
+overviewX = overviewDialog.getNextNumber();
+overviewY = overviewDialog.getNextNumber();
+objLongName = gd.getNextRadioButton();
 
-zProjector = new ZProjector();
-zProjector.setMethod(0);
 
-dark_image = "D:/User_Scratch/Derin/easyIRIS/mirror files/darkImg_easyIRIS.tif";
+mm.setExposure(exposureTime);
+mmc.setConfig("Objective",objLongName.substring(0,3));
+imWidth = mmc.getImageWidth();
+imHeight = mmc.getImageHeight();
+pixelSizeUm = mmc.getPixelSizeUm();
+fieldOfViewXmm = imWidth*pixelSizeUm/1000.0;
+fieldOfViewYmm = imHeight*pixelSizeUm/1000.0;
 
 // Set the z-stack properties depending on the objective
 // Note that properties scale roughly with the NA, not the magnification
-// Note that the media is not considered here BUT IT SHOULD BE
-// THESE ARE PLACEHOLDERS
+// TODO: consider changing for dry media
 zStackWidthUm = 0;zStepUm = 0.0;objNA = 0.0;objMag = 0;
 switch (objLongName.substring(0,3)) {
 	case "10x":
@@ -154,6 +100,110 @@ fieldOfViewYmm = imHeight*pixelSizeUm/1000.0;
 nPosX = Math.ceil(fieldSizeXmm / fieldOfViewXmm);
 nPosY = Math.ceil(fieldSizeYmm / fieldOfViewYmm);
 bitDepth = mmc.getImageBitDepth();
+
+// Perform rapid overview scan
+for (int idx=0; idx<nPosX; idx++){
+	// Coordinate information for dead-reckoning X,Y
+	thisX = startX - idx*fieldOfViewXmm*1000;
+	for (int idy=0; idy<nPosY; idy++){
+		// Coordinate information for dead-reckoning X,Y
+		thisY = startY - idy*fieldOfViewYmm*1000;
+	}
+}
+
+
+// // ---------------------------------------------------------------------------------
+// // GET SETTINGS FROM USER
+// // ---------------------------------------------------------------------------------
+ 
+// directoryC = new DirectoryChooser("Choose the save directory:");
+// directoryC.setDefaultDirectory("D:\\User_Scratch");
+// saveDir = directoryC.getDirectory();
+
+
+// String[] objectiveArray = new String[4]; 
+// objectiveArray[0]="10x   "; 
+// objectiveArray[1]="20x   "; 
+// objectiveArray[2]="40x   "; 
+// objectiveArray[3]="50x   ";
+// String[] mediaArray = new String[2]; 
+// mediaArray[0]="dry   "; 
+// mediaArray[1]="wet   "; 
+// String[] npArray = new String[2]; 
+// npArray[0]="bio-nps   "; 
+// npArray[1]="nanorod   ";
+
+// GenericDialog gd = new GenericDialog("Endpoint Whole Area Particle Counting");
+
+// gd.addStringField("Save Directory:",saveDir, 30);
+// gd.addStringField("Chip Name","chip" ,15); 
+// gd.addMessage("");
+// gd.addNumericField("field size X (mm)", 3,1);
+// gd.addNumericField("field size Y (mm)", 8,1);
+// gd.addMessage("");
+// // gd.addNumericField("Exposure time",initExp, 2);
+// gd.addMessage("");
+
+// // ???
+// curObj = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
+// gd.addRadioButtonGroup("Select the Objective",objectiveArray,1,4, curObj + "   "); 
+// gd.addMessage("");
+// gd.addRadioButtonGroup("Select media",mediaArray,1,2,"wet   "); 
+// gd.addMessage("");
+// gd.addRadioButtonGroup("Nanoparticle",npArray,1,3,"nanorod   "); 
+
+
+// gd.showDialog(); 
+// if (gd.wasCanceled()) 
+// return false; 
+
+// // Get Inputs
+// saveDir = gd.getNextString();
+// saveFname = gd.getNextString();
+// fieldSizeXmm = gd.getNextNumber();
+// fieldSizeYmm = gd.getNextNumber();
+// // exposureTime = gd.getNextNumber();
+// objLongName = gd.getNextRadioButton();
+// immersionMedia = gd.getNextRadioButton(); 
+// nanoparticle = gd.getNextRadioButton(); 
+
+
+
+// // ---------------------------------------------------------------------------------
+// // CONFIGURATION & SETUP
+// // ---------------------------------------------------------------------------------
+
+// // Figure out the correct polarizer settings
+// // For viruses, do not use polarization
+// linPol1 = 0;
+// // These must be initialized outside the conditional for proper scope
+// qwp1 = 0; qwp2 = 0; linPol2 = 0;
+// if (nanoparticle.equals("bio-nps   ")){ 
+// 	// turn polarization off
+// 	qwp1 = 60;
+// 	qwp2 = 351;
+// 	linPol2 = 0;
+// } else { // we are looking at nanorods
+// 	qwp1 = 15;
+// 	qwp2 = 40;
+// 	linPol2 = 60;
+// }
+// GenericDialog gd2 = new GenericDialog("Endpoint Whole Area Particle Counting");
+// gd2.addMessage("Ensure you are focused at the top-left corner of scan region, and ");
+// gd2.addMessage("the polarization optics are set to : " + linPol1 + " (Left-most), " + qwp1 + " (second on left), " + qwp2 + " (lower on right), " +  linPol2 + " (upper on right).");
+// gd2.showDialog();
+// if (gd2.wasCanceled())
+// 	return false;
+
+combiner = new StackCombiner();
+ic = new ImageCalculator();
+is = new ImageStatistics();
+statOptions = is.MEDIAN;
+
+zProjector = new ZProjector();
+zProjector.setMethod(0);
+
+
 
 
 // Prepare for acquisition
@@ -297,131 +347,129 @@ ImageStack burstStack = new ImageStack((int)imWidth, (int) imHeight, (int)burstF
 ImagePlus burstImp = new ImagePlus("burst");
 
 
-acquisitionLoop: {
-	for (int idx=0; idx<nPosX; idx++){
+for (int idx=0; idx<nPosX; idx++){
+	// Coordinate information for dead-reckoning X,Y,Z
+	thisX = startX - idx*fieldOfViewXmm*1000;
+	colStartZ = topLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(topRightZ-topLeftZ);
+	colEndZ = botLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(botRightZ-botLeftZ);
+
+	for (int idy=0; idy<nPosY; idy++){
 		// Coordinate information for dead-reckoning X,Y,Z
-		thisX = startX - idx*fieldOfViewXmm*1000;
-		colStartZ = topLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(topRightZ-topLeftZ);
-		colEndZ = botLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(botRightZ-botLeftZ);
+		thisY = startY - idy*fieldOfViewYmm*1000;
+		thisZ = colStartZ + ((idy*fieldOfViewYmm)/fieldSizeYmm)*(colStartZ-colEndZ);
+		// Move in X,Y,Z
+		mmc.setXYPosition(thisX, thisY);
+		mmc.setPosition(thisZ);
+		Thread.sleep(1000);
+		
 
-		for (int idy=0; idy<nPosY; idy++){
-			// Coordinate information for dead-reckoning X,Y,Z
-			thisY = startY - idy*fieldOfViewYmm*1000;
-			thisZ = colStartZ + ((idy*fieldOfViewYmm)/fieldSizeYmm)*(colStartZ-colEndZ);
-			// Move in X,Y,Z
-			mmc.setXYPosition(thisX, thisY);
-			mmc.setPosition(thisZ);
-			Thread.sleep(1000);
-			
+		// Create Preview -------------------------------------------
+		mmc.stopSequenceAcquisition();
+		mmc.clearCircularBuffer();
+		mmc.waitForSystem();
 
-			// Create Preview -------------------------------------------
+		image = mm.live().snap(false).get(0);
+		ip = mm.data().ij().createProcessor(image).bin(5);
+		imp = new ImagePlus(saveDir, ip);
+		IJ.run(imp,"Fast Filters", "link filter=median x=15 y=15 preprocessing=none subtract offset=32768");
+		IJ.run(imp,"8-bit","");
+		// Rescale to improve background homogneity
+		myStats = is.getStatistics(imp.getProcessor(), statOptions, imp.getCalibration());
+		myMedian = myStats.median;
+		IJ.run(imp,"Add...", "value=" + (125 - myMedian));
+		// imp.show();
+		// Add this to the preview slice
+		if (idy == 0) {
+			thisSlice = imp.duplicate();
+		} else {
+			combinedStack = combiner.combineVertically(thisSlice.getStack(), imp.getStack());
+			thisSlice = new ImagePlus("slice", combinedStack);
+		}
+
+		// Take Z-stack -------------------------------------------
+		zStart = thisZ-zStackWidthUm/2;
+		ImageStack thisZStack = new ImageStack((int)imWidth, (int)imHeight, (int)nZPos);
+		for (int zidx=0; zidx< nZPos; zidx++) {
+			mmc.setPosition(zStart+zidx*zStepUm);
 			mmc.stopSequenceAcquisition();
 			mmc.clearCircularBuffer();
 			mmc.waitForSystem();
 
-			image = mm.live().snap(false).get(0);
-			ip = mm.data().ij().createProcessor(image).bin(5);
-			imp = new ImagePlus(saveDir, ip);
-			IJ.run(imp,"Fast Filters", "link filter=median x=15 y=15 preprocessing=none subtract offset=32768");
-			IJ.run(imp,"8-bit","");
-			// Rescale to improve background homogneity
-			myStats = is.getStatistics(imp.getProcessor(), statOptions, imp.getCalibration());
-			myMedian = myStats.median;
-			IJ.run(imp,"Add...", "value=" + (125 - myMedian));
-			// imp.show();
-			// Add this to the preview slice
-			if (idy == 0) {
-				thisSlice = imp.duplicate();
-			} else {
-				combinedStack = combiner.combineVertically(thisSlice.getStack(), imp.getStack());
-				thisSlice = new ImagePlus("slice", combinedStack);
-			}
-
-			// Take Z-stack -------------------------------------------
-			zStart = thisZ-zStackWidthUm/2;
-			ImageStack thisZStack = new ImageStack((int)imWidth, (int)imHeight, (int)nZPos);
-			for (int zidx=0; zidx< nZPos; zidx++) {
-				mmc.setPosition(zStart+zidx*zStepUm);
-				mmc.stopSequenceAcquisition();
-				mmc.clearCircularBuffer();
-				mmc.waitForSystem();
-
-				mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
-				mmc.startContinuousSequenceAcquisition(exposureTime/10.0);
-				curFrame = 0;
-				while ( curFrame < burstFrameNo ){
-					if (mmc.getRemainingImageCount() > 0) {
-						burstStack.setPixels(mmc.popNextImage(),curFrame+1);
-						curFrame++;
-					}
-					else {
-						// Wait for another image to arrive.
-						Thread.sleep((int) Math.round(Math.min(.5 * exposureTime, 20)));
-					}
+			mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
+			mmc.startContinuousSequenceAcquisition(exposureTime/10.0);
+			curFrame = 0;
+			while ( curFrame < burstFrameNo ){
+				if (mmc.getRemainingImageCount() > 0) {
+					burstStack.setPixels(mmc.popNextImage(),curFrame+1);
+					curFrame++;
 				}
-				mmc.stopSequenceAcquisition();
-				mmc.clearCircularBuffer();
-
-				// Point Grey camera issue: the first frame is always blank.
-				burstStack.deleteSlice(1);
-				burstImp.setStack(burstStack);
-				zProjector.setImage(burstImp);
-				zProjector.doProjection();
-				thisZStack.setPixels(zProjector.getProjection().getProcessor().getPixels(), zidx+1);
-				if(didCancel){
-					break;
+				else {
+					// Wait for another image to arrive.
+					Thread.sleep((int) Math.round(Math.min(.5 * exposureTime, 20)));
 				}
 			}
+			mmc.stopSequenceAcquisition();
+			mmc.clearCircularBuffer();
+
+			// Point Grey camera issue: the first frame is always blank.
+			burstStack.deleteSlice(1);
+			burstImp.setStack(burstStack);
+			zProjector.setImage(burstImp);
+			zProjector.doProjection();
+			thisZStack.setPixels(zProjector.getProjection().getProcessor().getPixels(), zidx+1);
 			if(didCancel){
 				break;
 			}
-
-			// Perform Particle detection -------------------------------------------
-			ImagePlus stackPlus = new ImagePlus("current Z stack", thisZStack);
-
-			IJ.run(stackPlus,"Spandex Stack", "size=15 brightness=8 choose=D:\\User_Scratch\\_instrument_files\\resources\\nir_psf.tif");
-			
-			// Save Particle Positions -------------------------------------------
-			IJ.renameResults("Particle Results","Results");
-			resultsTable = ResultsTable.getResultsTable();
-			xCol =  resultsTable.getColumnIndex("x");
-			yCol =  resultsTable.getColumnIndex("y");
-			xPos = resultsTable.getColumnAsDoubles(xCol);
-			yPos = resultsTable.getColumnAsDoubles(yCol);
-			for (k=0; k<xPos.length; k+=1){
-				particleXYBuffer.write( IJ.d2s(xPos[k]*pixelSizeUm-(thisX-startX),3) + ", " + IJ.d2s(-yPos[k]*pixelSizeUm+(thisY-startY),3));
-				particleXYBuffer.newLine();
-			}
-			IJ.selectWindow("Results");
-			IJ.run("Close");
-
-			// Check in with UI
-			if(didCancel){
-				break;
-			}
-			pctComplete = Math.round( (idx*nPosY+idy+1)*100/(nPosX*nPosY) );
-			progressbar.setValue((int)pctComplete);
-		}
-
-		// Add the preview 'slice' to the 'final preview'
-		if ( idx == 0){
-			finalImp = thisSlice;
-		} else {
-			newSlice = thisSlice;
-			combinedSlices = combiner.combineHorizontally(finalImp.getStack(), thisSlice.getStack());
-			// finalImp.close();
-			// thisSlice.close();
-			finalImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
 		}
 		if(didCancel){
 			break;
 		}
+
+		// Perform Particle detection -------------------------------------------
+		ImagePlus stackPlus = new ImagePlus("current Z stack", thisZStack);
+
+		IJ.run(stackPlus,"Spandex Stack", "size=15 brightness=8 choose=D:\\User_Scratch\\_instrument_files\\resources\\nir_psf.tif");
+		
+		// Save Particle Positions -------------------------------------------
+		IJ.renameResults("Particle Results","Results");
+		resultsTable = ResultsTable.getResultsTable();
+		xCol =  resultsTable.getColumnIndex("x");
+		yCol =  resultsTable.getColumnIndex("y");
+		xPos = resultsTable.getColumnAsDoubles(xCol);
+		yPos = resultsTable.getColumnAsDoubles(yCol);
+		for (k=0; k<xPos.length; k+=1){
+			particleXYBuffer.write( IJ.d2s(xPos[k]*pixelSizeUm-(thisX-startX),3) + ", " + IJ.d2s(-yPos[k]*pixelSizeUm+(thisY-startY),3));
+			particleXYBuffer.newLine();
+		}
+		IJ.selectWindow("Results");
+		IJ.run("Close");
+
+		// Check in with UI
+		if(didCancel){
+			break;
+		}
+		pctComplete = Math.round( (idx*nPosY+idy+1)*100/(nPosX*nPosY) );
+		progressbar.setValue((int)pctComplete);
 	}
-	scanLabel.setText("\u2611 3. Array Scanning");
-	scanLabel.setFont(boldFont);
-	progressbar.setValue(100);
-	notification.setText("Saving...");
+
+	// Add the preview 'slice' to the 'final preview'
+	if ( idx == 0){
+		finalImp = thisSlice;
+	} else {
+		newSlice = thisSlice;
+		combinedSlices = combiner.combineHorizontally(finalImp.getStack(), thisSlice.getStack());
+		// finalImp.close();
+		// thisSlice.close();
+		finalImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
+	}
+	if(didCancel){
+		break;
+	}
 }
+scanLabel.setText("\u2611 3. Array Scanning");
+scanLabel.setFont(boldFont);
+progressbar.setValue(100);
+notification.setText("Saving...");
 
 // ---------------------------------------------------------------------------------
 // SAVE RESULTS 
