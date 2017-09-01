@@ -1,0 +1,48 @@
+// Example script for testing the performance of burst acquisition
+// Objective: acquire 16 frames and average them, as fast as possible
+
+import ij.ImagePlus;
+import ij.ImageStack;
+import ij.gui.scripter;
+import ij.plugin.ZProjector;
+
+zp = new ZProjector();
+zp.setMethod(0);
+mm.acquisitions().clearRunnables();
+mmc.stopSequenceAcquisition();
+mmc.clearCircularBuffer();
+mmc.waitForSystem();
+
+startTime = System.currentTimeMillis();
+
+nFrames = 16; 
+mm.setExposure(100); // 100 ms exposure
+
+imWidth = mmc.getImageWidth();
+imHeight = mmc.getImageHeight();
+imgStack = new ImageStack((int)imWidth, (int)imHeight, (int)nFrames);
+mmc.startContinuousSequenceAcquisition(0);
+
+curFrame = 0;
+while (curFrame < nFrames){
+	if (mmc.getRemainingImageCount() > 0){
+		imgStack.setPixels(mmc.popNextImage(), curFrame+1); // imageStack indexing starts at 1
+		curFrame++;
+	} else {
+		Thread.sleep((int) Math.round(Math.min(.5 * 100, 20)));
+	}
+}
+
+mmc.stopSequenceAcquisition();
+mmc.clearCircularBuffer();
+
+stackImp = new ImagePlus("thingy", imgStack);
+
+zp.setImage(stackImp);
+zp.doProjection();
+
+timeSecs = (System.currentTimeMillis() - startTime)/1000.0;
+mm.scripter().message("" + timeSecs);
+
+avgImp = zp.getProjection();
+avgImp.show();

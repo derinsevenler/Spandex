@@ -1,0 +1,78 @@
+JFrame frame = new JFrame("Acquisition Progress");
+
+Font boldFont = new Font("Deja Vu MS", Font.BOLD, 14);
+Font normalFont = new Font("Deja Vu MS", Font.PLAIN, 14);
+
+GridLayout layout = new GridLayout(0,1, 20, 0);
+layout.setHgap(0);
+layout.setVgap(25);
+JPanel progressPanel = new JPanel();
+progressPanel.setLayout(layout);
+JLabel setupLabel = new JLabel("\u2610 1. Setup");
+setupLabel.setFont(normalFont);
+progressPanel.add(setupLabel);
+JLabel initLabel = new JLabel("\u2610 2. Initialization");
+initLabel.setFont(normalFont);
+progressPanel.add(initLabel);
+
+// scan panel
+JPanel scanPanel = new JPanel();
+GridLayout scanLayout = new GridLayout(1, 0, 0, 20);
+scanPanel.setLayout(scanLayout);
+JLabel scanLabel = new JLabel("\u2610 3. Array Scanning");
+scanLabel.setFont(normalFont);
+scanPanel.add(scanLabel);
+JProgressBar progressbar = new JProgressBar(0, 100);
+progressbar.setStringPainted(true);
+scanPanel.add(progressbar);
+progressPanel.add(scanPanel);
+
+progressPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+frame.getContentPane().add(progressPanel, BorderLayout.NORTH);
+
+JPanel botPanel = new JPanel(); //bottom panel
+botPanel.setLayout(new GridLayout(0,1,0,0));
+
+JPanel buttonPanel = new JPanel();
+buttonPanel.setLayout(new GridLayout(1,2,20,20));
+JButton pauseButton = new JButton("Pause");
+pauseButton.setEnabled(false);
+didCancel = false;
+buttonHandler = new ActionListener() {
+	actionPerformed (e) {
+		didCancel = true;
+	}
+};
+
+buttonPanel.add(pauseButton);
+JButton cancelButton = new JButton("Cancel");
+cancelButton.addActionListener(buttonHandler);
+buttonPanel.add(cancelButton);
+JLabel notification = new JLabel("", SwingConstants.CENTER);
+notification.setFont(boldFont);
+
+botPanel.add(buttonPanel);
+botPanel.add(notification);
+
+botPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+frame.getContentPane().add(botPanel, BorderLayout.SOUTH);
+
+frame.pack();
+frame.setSize(300, 250);
+frame.setLocation(100,100);
+frame.setVisible(true);
+frame.setResizable(false);
+
+//progressbar.setValue(30);
+//progressbar.setStirngPainted(true);
+
+for(int i = 0; i<100; i++){
+	Thread.sleep(30);
+	progressbar.setValue(i);
+}
+scanLabel.setText("\u2611 3. Array Scanning");
+scanLabel.setFont(boldFont);
+
+acquire: {
+	
+}
