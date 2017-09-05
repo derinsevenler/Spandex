@@ -586,6 +586,7 @@ if(didCancel){
 	notification.setText("Acquisition Canceled.");
 } else {
 	FileSaver fs = new FileSaver(overviewImp);
+	fs.saveAsTiff(saveDir + saveFname + "_preview_image.tif");
 	notification.setText("Scan Complete!");
 	// IJ.log("Scan complete.\nPreview image saved as \n" + saveDir + saveFname + "_preview_image.tif \nParticle positions saved in \n" + saveDir + saveFname + "_particleXY.txt");
 }
