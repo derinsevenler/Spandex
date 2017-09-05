@@ -182,10 +182,12 @@ mm.data().clearPipeline(); // i.e., 'on-the-fly' processors
 
 
 // Perform rapid overview scan
+burstFrameNo = 16;
+
 startX = mmc.getXYStagePosition().getX();
 startY = mmc.getXYStagePosition().getY();
-ImageStack burstStack = new ImageStack((int)imWidth, (int) imHeight, 2);
-ImagePlus finalImp;
+
+ImagePlus overviewImp;
 ImagePlus thisSlice; // declaration is required for correct scope
 
 for (int idx=0; idx<nPosX; idx++){
@@ -195,22 +197,36 @@ for (int idx=0; idx<nPosX; idx++){
 	for (int idy=0; idy<nPosY; idy++){
 		thisY = startY - idy*fieldOfViewYmm*1000;
 		mmc.setXYPosition(thisX, thisY);
-		Thread.sleep(300);
+		Thread.sleep(250);
 
 		mmc.stopSequenceAcquisition();
 		mmc.clearCircularBuffer();
+		burstStack = new ImageStack((int)imWidth, (int) imHeight, burstFrameNo);
+		burstImp = new ImagePlus("burst");
 		mmc.waitForSystem();
-		
-		mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
-		mmc.startSequenceAcquisition(2,0,true);
-		while(mmc.getRemainingImageCount() < 2 ){
-			Thread.sleep(5);
+
+		curFrame = 0;
+		mmc.startContinuousSequenceAcquisition(0);
+		while ( curFrame < burstFrameNo ){
+			if (mmc.getRemainingImageCount() > 0) {
+				burstStack.setPixels(mmc.popNextImage(),curFrame+1);
+				curFrame++;
+			}
+			else {
+				// Wait for another image to arrive.
+				Thread.sleep(5);
+			}
 		}
-		mmc.popNextImage();
- 		ip = new ShortProcessor((int)imWidth, (int)imHeight);
- 		ip.setPixels(mmc.popNextImage());
- 		imp = new ImagePlus("frame", ip);
- 		
+		mmc.stopSequenceAcquisition();
+		mmc.clearCircularBuffer();
+
+		// Point Grey camera issue: the first frame is always blank.
+		burstStack.deleteSlice(1);
+		burstImp.setStack(burstStack);
+		zProjector.setImage(burstImp);
+		zProjector.doProjection();
+		imp = new ImagePlus("avg frame", zProjector.getProjection().getProcessor());
+		
 		if (idy == 0) {
  			thisSlice = imp.duplicate();
  		} else {
@@ -220,12 +236,12 @@ for (int idx=0; idx<nPosX; idx++){
 	}
  	// Add the preview 'slice' to the 'final preview'
  	if ( idx == 0){
- 		finalImp = thisSlice;
+ 		overviewImp = thisSlice;
  	} else {
- 		combinedSlices = combiner.combineHorizontally(finalImp.getStack(), thisSlice.getStack());
+ 		combinedSlices = combiner.combineHorizontally(overviewImp.getStack(), thisSlice.getStack());
  		// finalImp.close();
  		// thisSlice.close();
- 		finalImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
+ 		overviewImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
  	}
 	if(didCancel){
 		break;
@@ -237,9 +253,13 @@ initLabel.setFont(boldFont);
 
 // Get ROI from user
 
-finalImp.show();
+// All units in pixels
+// IJ.run(overviewImp, "Set Scale...", "distance=" + (Math.round((1/pixelSizeUm*100.0))/100.0) +  " known=1 pixel=1 unit=um");
+overviewImp.show();
+IJ.makeRectangle(0.1*overviewImp.getWidth(), 0.1*overviewImp.getHeight(), 0.8*overviewImp.getWidth(), 0.8*overviewImp.getHeight()); 
+rect = overviewImp.getRoi().getBounds();
 
-JFrame roiSelectFrame = new JFrame("Maje");
+JFrame roiSelectFrame = new JFrame("Scan region");
 
 JLabel setupLabel = new JLabel("Adjust the scan region.");
 setupLabel.setFont(normalFont);
@@ -249,17 +269,7 @@ JPanel roiButtonPanel = new JPanel(); //button panel
 roiButtonPanel.setLayout(new GridLayout(0,1,0,0));
 JPanel buttonPanel = new JPanel();
 buttonPanel.setLayout(new GridLayout(1,2,20,20));
-JButton pauseButton = new JButton("Pause");
-pauseButton.setEnabled(false); // <-- TODO: implement pause functionality
-didPause = false;
-pauseButton.addActionListener(new ActionListener() {
-	actionPerformed (e) {
-		didPause = true;
-		notification.setText("Acqusition paused");
-	}
-});
-buttonPanel.add(pauseButton);
-JButton cancelButton = new JButton("Cancel");
+JButton cancelButton = new JButton("NM");
 didCancel = false;
 cancelButton.addActionListener(new ActionListener() {
 	actionPerformed (e) {
@@ -268,18 +278,43 @@ cancelButton.addActionListener(new ActionListener() {
 	}
 });
 buttonPanel.add(cancelButton);
-JLabel notification = new JLabel("", SwingConstants.CENTER);
-notification.setFont(boldFont);
-
+JButton okButton = new JButton("OK man");
+clickOk = false;
+okButton.addActionListener(new ActionListener() {
+	actionPerformed (e) {
+		clickOk = true;
+	}
+});
+buttonPanel.add(okButton);
 roiButtonPanel.add(buttonPanel);
-roiButtonPanel.add(notification);
-
 roiButtonPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
 roiSelectFrame.getContentPane().add(roiButtonPanel, BorderLayout.SOUTH);
-
 
 roiSelectFrame.pack();
 roiSelectFrame.setSize(250, 200);
 roiSelectFrame.setLocation(300,300);
 roiSelectFrame.setVisible(true);
 roiSelectFrame.setResizable(false);
+
+// wait for button press to continue
+while (!clickOk){
+	if (didCancel){
+		break;
+	}
+	Thread.sleep(200);
+}
+if (didCancel){
+	mmc.setXYPosition(startX,startY);
+	return false;
+}
+rect = overviewImp.getRoi().getBounds();
+roiSelectFrame.setVisible(false);
+roiSelectFrame.dispose();
+
+// get scan region from ROI
+scanStartX = startX - rect.getX()*pixelSizeUm;
+scanStartY = startY - rect.getY()*pixelSizeUm;
+scanX = rect.getWidth();
+scanY = rect.getHeight();
+
+mmc.setXYPosition(scanStartX,scanStartY);
