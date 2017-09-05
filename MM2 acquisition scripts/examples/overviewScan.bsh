@@ -92,77 +92,6 @@ fieldOfViewYmm = imHeight*pixelSizeUm/1000.0;
 nPosX = Math.ceil(overviewX / fieldOfViewXmm);
 nPosY = Math.ceil(overviewY / fieldOfViewYmm);
 
-// Prepare Progress panel
-JFrame progressFrame = new JFrame("Acquisition Progress");
-
-Font boldFont = new Font("Deja Vu MS", Font.BOLD, 14);
-Font normalFont = new Font("Deja Vu MS", Font.PLAIN, 14);
-
-GridLayout layout = new GridLayout(0,1, 20, 0);
-layout.setHgap(0);
-layout.setVgap(25);
-JPanel progressPanel = new JPanel();
-progressPanel.setLayout(layout);
-JLabel setupLabel = new JLabel("\u2611 1. Setup");
-setupLabel.setFont(boldFont);
-progressPanel.add(setupLabel);
-JLabel initLabel = new JLabel("\u2610 2. Overview scan");
-initLabel.setFont(normalFont);
-progressPanel.add(initLabel);
-
-// scan panel
-JPanel scanPanel = new JPanel();
-GridLayout scanLayout = new GridLayout(1, 0, 0, 20);
-scanPanel.setLayout(scanLayout);
-JLabel scanLabel = new JLabel("\u2610 3. Array Scan");
-scanLabel.setFont(normalFont);
-scanPanel.add(scanLabel);
-JProgressBar progressbar = new JProgressBar(0, 100);
-progressbar.setStringPainted(true);
-scanPanel.add(progressbar);
-progressPanel.add(scanPanel);
-
-progressPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-progressFrame.getContentPane().add(progressPanel, BorderLayout.NORTH);
-
-JPanel botPanel = new JPanel(); //bottom panel
-botPanel.setLayout(new GridLayout(0,1,0,0));
-JPanel buttonPanel = new JPanel();
-buttonPanel.setLayout(new GridLayout(1,2,20,20));
-JButton pauseButton = new JButton("Pause");
-pauseButton.setEnabled(false); // <-- TODO: implement pause functionality
-didPause = false;
-pauseButton.addActionListener(new ActionListener() {
-	actionPerformed (e) {
-		didPause = true;
-		notification.setText("Acqusition paused");
-	}
-});
-buttonPanel.add(pauseButton);
-JButton cancelButton = new JButton("Cancel");
-didCancel = false;
-cancelButton.addActionListener(new ActionListener() {
-	actionPerformed (e) {
-		didCancel = true;
-		notification.setText("Cancelling, please wait...");
-	}
-});
-buttonPanel.add(cancelButton);
-JLabel notification = new JLabel("", SwingConstants.CENTER);
-notification.setFont(boldFont);
-
-botPanel.add(buttonPanel);
-botPanel.add(notification);
-
-botPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-progressFrame.getContentPane().add(botPanel, BorderLayout.SOUTH);
-
-progressFrame.pack();
-progressFrame.setSize(300, 250);
-progressFrame.setLocation(100,100);
-progressFrame.setVisible(true);
-progressFrame.setResizable(false);
-
 
 combiner = new StackCombiner();
 ic = new ImageCalculator();
@@ -192,12 +121,16 @@ ImagePlus thisSlice; // declaration is required for correct scope
 
 for (int idx=0; idx<nPosX; idx++){
 	thisX = startX - idx*fieldOfViewXmm*1000;
+	// side-step to remove backlash
+	mmc.setXYPosition(thisX+1000.0, startY+1000.0);
+	mmc.waitForSystem();
 	mmc.setXYPosition(thisX, startY);
-	Thread.sleep(1000);
+	mmc.waitForSystem();
+	// Thread.sleep(2000);
 	for (int idy=0; idy<nPosY; idy++){
 		thisY = startY - idy*fieldOfViewYmm*1000;
 		mmc.setXYPosition(thisX, thisY);
-		Thread.sleep(250);
+		// Thread.sleep(250);
 
 		mmc.stopSequenceAcquisition();
 		mmc.clearCircularBuffer();
@@ -239,8 +172,6 @@ for (int idx=0; idx<nPosX; idx++){
  		overviewImp = thisSlice;
  	} else {
  		combinedSlices = combiner.combineHorizontally(overviewImp.getStack(), thisSlice.getStack());
- 		// finalImp.close();
- 		// thisSlice.close();
  		overviewImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
  	}
 	if(didCancel){
@@ -297,17 +228,17 @@ roiSelectFrame.setVisible(true);
 roiSelectFrame.setResizable(false);
 
 // wait for button press to continue
-while (!clickOk){
-	if (didCancel){
-		break;
-	}
+while (!clickOk && !didCancel){
 	Thread.sleep(200);
 }
 if (didCancel){
 	mmc.setXYPosition(startX,startY);
+	roiSelectFrame.setVisible(false);
+	roiSelectFrame.dispose();
 	return false;
 }
 rect = overviewImp.getRoi().getBounds();
+IJ.run(overviewImp, "Crop", "");
 roiSelectFrame.setVisible(false);
 roiSelectFrame.dispose();
 

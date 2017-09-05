@@ -318,10 +318,7 @@ roiSelectFrame.setVisible(true);
 roiSelectFrame.setResizable(false);
 
 // wait for button press to continue
-while (!clickOk){
-	if (didCancel){
-		break;
-	}
+while (!clickOk || !didCancel){
 	Thread.sleep(200);
 }
 if (didCancel){
@@ -333,14 +330,13 @@ if (didCancel){
 	return false;
 }
 rect = overviewImp.getRoi().getBounds();
-roiSelectFrame.setVisible(false);
-roiSelectFrame.dispose();
-
-// get scan region from ROI
 scanStartX = startX - rect.getX()*pixelSizeUm;
 scanStartY = startY - rect.getY()*pixelSizeUm;
 scanX = rect.getWidth();
 scanY = rect.getHeight();
+IJ.run(overviewImp, "Crop","");
+roiSelectFrame.setVisible(false);
+roiSelectFrame.dispose();
 
 mmc.setXYPosition(scanStartX,scanStartY);
 fieldSizeXmm = scanX*pixelSizeUm/1000.0;
@@ -362,7 +358,7 @@ String[] npArray = new String[2];
 npArray[0]="bio-nps   "; 
 npArray[1]="nanorod   ";
 
-GenericDialog gd = new GenericDialog("Endpoint Whole Area Particle Counting");
+GenericDialog gd = new GenericDialog("Scan settings");
 
 gd.addStringField("Save Directory:",saveDir, 30);
 gd.addStringField("Chip Name","chip" ,15); 
@@ -478,8 +474,12 @@ for (int idx=0; idx<nPosX; idx++){
 	thisX = scanStartX - idx*fieldOfViewXmm*1000;
 	colStartZ = topLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(topRightZ-topLeftZ);
 	colEndZ = botLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(botRightZ-botLeftZ);
+	
+	mmc.setXYPosition(thisX+1000.0, scanStartY+1000.0);
+	mmc.waitForSystem();
 	mmc.setXYPosition(thisX, scanStartY);
-	Thread.sleep(1000);
+	mmc.waitForSystem();
+	
 	for (int idy=0; idy<nPosY; idy++){
 		// Coordinate information for dead-reckoning X,Y,Z
 		thisY = scanStartY - idy*fieldOfViewYmm*1000;
@@ -487,7 +487,7 @@ for (int idx=0; idx<nPosX; idx++){
 		// Move in X,Y,Z
 		mmc.setXYPosition(thisX, thisY);
 		mmc.setPosition(thisZ);
-		Thread.sleep(250);
+		mmc.waitForSystem();
 
 		// Take Z-stack -------------------------------------------
 		zStart = thisZ-zStackWidthUm/2;
@@ -584,4 +584,3 @@ if(didCancel){
 	notification.setText("Scan Complete!");
 	// IJ.log("Scan complete.\nPreview image saved as \n" + saveDir + saveFname + "_preview_image.tif \nParticle positions saved in \n" + saveDir + saveFname + "_particleXY.txt");
 }
-
