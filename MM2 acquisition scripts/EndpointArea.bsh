@@ -202,12 +202,17 @@ ImagePlus thisSlice; // declaration is required for correct scope
 
 for (int idx=0; idx<nPosX; idx++){
 	thisX = startX - idx*fieldOfViewXmm*1000;
+	
+	mmc.setXYPosition(thisX+1000.0, startY+1000.0);
+	Thread.sleep((int)(overviewX/stageSpeed*1000+500));
 	mmc.setXYPosition(thisX, startY);
 	Thread.sleep(1000);
+
 	for (int idy=0; idy<nPosY; idy++){
 		thisY = startY - idy*fieldOfViewYmm*1000;
 		mmc.setXYPosition(thisX, thisY);
-		Thread.sleep(500);
+		Thread.sleep(1000);
+
 		mmc.stopSequenceAcquisition();
 		mmc.clearCircularBuffer();
 		burstStack = new ImageStack((int)imWidth, (int) imHeight, burstFrameNo);
@@ -318,7 +323,7 @@ roiSelectFrame.setVisible(true);
 roiSelectFrame.setResizable(false);
 
 // wait for button press to continue
-while (!clickOk || !didCancel){
+while (!clickOk && !didCancel){
 	Thread.sleep(200);
 }
 if (didCancel){
@@ -476,9 +481,9 @@ for (int idx=0; idx<nPosX; idx++){
 	colEndZ = botLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(botRightZ-botLeftZ);
 	
 	mmc.setXYPosition(thisX+1000.0, scanStartY+1000.0);
-	mmc.waitForSystem();
+	Thread.sleep((int)(fieldSizeYmm/stageSpeed*1000+1000));
 	mmc.setXYPosition(thisX, scanStartY);
-	mmc.waitForSystem();
+	Thread.sleep(1000);
 	
 	for (int idy=0; idy<nPosY; idy++){
 		// Coordinate information for dead-reckoning X,Y,Z
@@ -487,7 +492,7 @@ for (int idx=0; idx<nPosX; idx++){
 		// Move in X,Y,Z
 		mmc.setXYPosition(thisX, thisY);
 		mmc.setPosition(thisZ);
-		mmc.waitForSystem();
+		Thread.sleep(1000);
 
 		// Take Z-stack -------------------------------------------
 		zStart = thisZ-zStackWidthUm/2;

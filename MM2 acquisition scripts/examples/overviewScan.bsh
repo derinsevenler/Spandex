@@ -17,6 +17,7 @@ import ij.process.ImageStatistics;
 // ---------------------------------------------------------------------------------
 
 initExposureTime = mmc.getExposure();
+stageSpeed = 5; // mm/s
 initObjective = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
 
 String[] objectiveArray = new String[4]; 
@@ -123,14 +124,14 @@ for (int idx=0; idx<nPosX; idx++){
 	thisX = startX - idx*fieldOfViewXmm*1000;
 	// side-step to remove backlash
 	mmc.setXYPosition(thisX+1000.0, startY+1000.0);
-	mmc.waitForSystem();
+	Thread.sleep((int)(overviewX/stageSpeed*1000+1000));
 	mmc.setXYPosition(thisX, startY);
-	mmc.waitForSystem();
-	// Thread.sleep(2000);
+	Thread.sleep(1000);
+
 	for (int idy=0; idy<nPosY; idy++){
 		thisY = startY - idy*fieldOfViewYmm*1000;
 		mmc.setXYPosition(thisX, thisY);
-		// Thread.sleep(250);
+		Thread.sleep(1000);
 
 		mmc.stopSequenceAcquisition();
 		mmc.clearCircularBuffer();
@@ -174,21 +175,16 @@ for (int idx=0; idx<nPosX; idx++){
  		combinedSlices = combiner.combineHorizontally(overviewImp.getStack(), thisSlice.getStack());
  		overviewImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
  	}
-	if(didCancel){
-		break;
-	}
 }
 mmc.setXYPosition(startX, startY);
-initLabel.setText("\u2611 2. Overview Scan");
-initLabel.setFont(boldFont);
 
 // Get ROI from user
 
 // All units in pixels
 // IJ.run(overviewImp, "Set Scale...", "distance=" + (Math.round((1/pixelSizeUm*100.0))/100.0) +  " known=1 pixel=1 unit=um");
 overviewImp.show();
+Thread.sleep(100);
 IJ.makeRectangle(0.1*overviewImp.getWidth(), 0.1*overviewImp.getHeight(), 0.8*overviewImp.getWidth(), 0.8*overviewImp.getHeight()); 
-rect = overviewImp.getRoi().getBounds();
 
 JFrame roiSelectFrame = new JFrame("Scan region");
 
