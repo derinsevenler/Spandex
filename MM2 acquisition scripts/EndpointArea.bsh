@@ -16,6 +16,7 @@ import ij.process.ImageStatistics;
 // ---------------------------------------------------------------------------------
 
 initExposureTime = mmc.getExposure();
+stageSpeed = 5; // mm/s
 initObjective = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
 
 String[] objectiveArray = new String[4]; 
@@ -341,7 +342,7 @@ fieldSizeXmm = rect.getWidth()*pixelSizeUm/1000.0;
 fieldSizeYmm = rect.getHeight()*pixelSizeUm/1000.0;
 mmc.setXYPosition(scanStartX,scanStartY);
 nPosX = Math.ceil(fieldSizeXmm / fieldOfViewXmm);
-nPosY = Math.ceil(fieldSizeXmm / fieldOfViewYmm);
+nPosY = Math.ceil(fieldSizeYmm / fieldOfViewYmm);
 
 IJ.run(overviewImp, "Crop","");
 roiSelectFrame.setVisible(false);
