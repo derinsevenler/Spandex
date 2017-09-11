@@ -22,12 +22,14 @@ public class Spandex_Particle_Counter implements Command {
 
 	private String imagePath, xyFilePath;
 	private ImagePlus originalImage;
+	private float cameraPixelSize;
+	private int arrayXSize, arrayYSize;
 	private ArrayList<Double> xPosUm, yPosUm;
 
 	@Override
 	public void run() {
 		getScanResults(); // get image and particle XY data
-		// getArrayProperties(); // TODO: get array properties using a simple dialog box
+		getArrayProperties(); // Get array properties using a simple dialog box
 		// TODO: user clicks on spots in corners to create grid
 		// TODO: Make grid of boxes
 		// TODO: perform spot detection within each grid box
@@ -45,15 +47,43 @@ public class Spandex_Particle_Counter implements Command {
 			String line;
 			while ((line = br.readLine()) != null) {
 				String[] thisXY = line.split(", ");
-				xPosUm.
+				xPosUm.add(Double.parseDouble(thisXY[0]);
+				yPosUm.add(Double.parseDouble(thisXY[1]);
 			}
-		}
-
+		} catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (br != null) {
+                try {
+                    br.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
 	}
 
-	// private void getArrayProperties(){
+	private void getArrayProperties(){
+		// Show image 
+		originalImage.show();
+		// get array size
+		NonBlockingGenericDialog dlg = new NonBlockingGenericDialog("Array Properties");
+		dlg.addNumericField("How many spots across (X direction):", 8, 0);
+		dlg.addNumericField("How many spots down (Y direction):", 12, 0);
+		dlg.addNumericField("Camera pixel size in microns:", 3.45, 2);
+		dlg.addNumericField("Objective Magnification:", 10, 0);
+		dlg.showDialog();
+		if (dlg.wasCanceled())
+			return false;
 
-	// }
+		arrayXSize = (int) dlg.getNextNumber();
+		arrayYSize = (int) dlg.getNextNumber();
+		float cameraPixelSize = (float) dlg.getNextNumber();
+		int mag = dlg.getNextNumber();
+		pixelSizeUm = cameraPixelSize/mag;
+	}
 
 	public static void main(final String... args) {
 		// Launch ImageJ as usual.
