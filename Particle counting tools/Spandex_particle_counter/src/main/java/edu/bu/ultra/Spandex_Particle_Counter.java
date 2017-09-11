@@ -35,11 +35,15 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.gui.GenericDialog;
 import ij.gui.Overlay;
-import ij.gui.GenericDialog;
 import ij.gui.PointRoi;
 import ij.gui.Roi;
 import ij.gui.Toolbar;
-import ij.plugin.frame.RoiManager;
+import ij.measure.ResultsTable;
+import ij.plugin.filter.ParticleAnalyzer;
+import ij.process.AutoThresholder;
+import ij.process.ImageProcessor;
+import inra.ijpb.morphology.Morphology;
+import inra.ijpb.morphology.Strel;
 
 /**
  * 
@@ -58,7 +62,8 @@ public class Spandex_Particle_Counter implements Command {
 	private JFrame pointPickerFrame;
 	private JLabel topLeftLabel, botLeftLabel, topRightLabel;
 	private Overlay gridOverlay;
-	private Roi[] roiArr;
+	private Roi[] gridArr, spotArr;
+	private ParticleAnalyzer particleAnalyzer;
 
 	@Override
 	public void run() {
@@ -72,7 +77,7 @@ public class Spandex_Particle_Counter implements Command {
 		if (!makeGrid()){
 			return;
 		}
-		
+		detectSpots();
 		System.out.println("Complete!");
 		// TODO: perform spot detection within each grid box
 		// TODO: Show all spot regions and allow user adjustment
@@ -257,14 +262,14 @@ public class Spandex_Particle_Counter implements Command {
 		topRightLabel.setText(" " + topRightX + ", " + topRightY);
 	}
 
-	private void makeGrid(){
+	private boolean makeGrid(){
 		// Interpolate to get spot regions
 
 		double stepSizeDownXPix = (botLeftX - topLeftX)*1.0/(arrayYSize-1);
 		double stepSizeDownYPix = (botLeftY - topLeftY)*1.0/(arrayYSize-1);
 
 		double stepSizeAcrossXPix = (topRightX - topLeftX)*1.0/(arrayXSize-1);
-		double stepSizeAcrossYPix = (topRightY - topLeftY)*1.0/(arrayXSize);
+		double stepSizeAcrossYPix = (topRightY - topLeftY)*1.0/(arrayXSize-1);
 
 		double halfWidthPix = spotRoiSizeMicrons/pixelSizeUm/2.0;
 
@@ -312,7 +317,7 @@ public class Spandex_Particle_Counter implements Command {
 		});
 		buttonPanel.add(okButton);
 		JFrame gridFrame = new JFrame("Spot grid");
-		gridFrame.getContentPane().add(new JLabel("Adjust spot regions and select OK", BorderLayout.NORTH);
+		gridFrame.getContentPane().add(new JLabel("Adjust spot regions and select OK"), BorderLayout.NORTH);
 		gridFrame.getContentPane().add(buttonPanel, BorderLayout.SOUTH);
 		gridFrame.pack();
 		gridFrame.setSize(300, 200);
@@ -331,8 +336,41 @@ public class Spandex_Particle_Counter implements Command {
 				e1.printStackTrace();
 			}
 		}
-		roiArr = gridOverlay.toArray();
+		gridArr = gridOverlay.toArray();
 		return !didCancel;
+	}
+
+	private void detectSpots(){
+		gridOverlay.clear();
+		originalImage.deleteRoi();
+		ResultsTable dummyTable = new ResultsTable(ResultsTable.)
+		particleAnalyzer = new ParticleAnalyzer(ParticleAnalyzer.SHOW_NONE);
+		for(int idx = 0; idx< gridArr.length; idx++){
+			originalImage.setRoi(gridArr[idx], false);
+			ImagePlus spotRegion = originalImage.duplicate();
+			Roi newRoi = detectSpot(spotRegion);
+			IJ.showProgress(idx/gridArr.length);
+		}
+		IJ.showProgress(1);
+	}
+
+	private Roi detectSpot(ImagePlus imp){
+		// Smooth image with Kuwahara filter
+		IJ.run(imp, "Kuwahara Filter","sampling=7"); // parameter is hardcoded
+		// Use Otsu's method to binarize image
+		imp.getProcessor().setAutoThreshold(AutoThresholder.Method.Triangle, false);
+		IJ.run(imp, "Convert to mask", "");
+		
+		// Perform morphological operations to adjust spot
+		Strel disk4 = Strel.Shape.DISK.fromRadius(4);
+		Strel disk6 = Strel.Shape.DISK.fromRadius(4);
+		ImageProcessor closed = Morphology.closing(imp.getProcessor(), disk4);
+		IJ.run(imp, "Fill Holes (Binary/Gray)", "");
+		ImageProcessor opened = Morphology.opening(imp.getProcessor(), disk6);
+		
+		particleAnalyzer.analyze(new ImagePlus("opened", opened));
+		
+		return 
 	}
 
 	public static void main(final String... args) {
