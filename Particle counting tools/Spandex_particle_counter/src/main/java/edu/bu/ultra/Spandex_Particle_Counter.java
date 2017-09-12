@@ -13,6 +13,7 @@ import net.imagej.ImageJ;
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
 import java.awt.Point;
+import java.awt.Polygon;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -36,12 +37,16 @@ import ij.ImagePlus;
 import ij.gui.GenericDialog;
 import ij.gui.Overlay;
 import ij.gui.PointRoi;
+import ij.gui.PolygonRoi;
 import ij.gui.Roi;
 import ij.gui.Toolbar;
 import ij.measure.ResultsTable;
+import ij.plugin.filter.LutApplier;
 import ij.plugin.filter.ParticleAnalyzer;
+import ij.plugin.frame.RoiManager;
 import ij.process.AutoThresholder;
 import ij.process.ImageProcessor;
+import ij.process.ImageStatistics;
 import inra.ijpb.morphology.Morphology;
 import inra.ijpb.morphology.Strel;
 
@@ -57,13 +62,17 @@ public class Spandex_Particle_Counter implements Command {
 	private float pixelSizeUm;
 	private int arrayXSize, arrayYSize, spotRoiSizeMicrons;
 	private ArrayList<Double> xPosUm, yPosUm;
+	private ArrayList<Integer> spotCounts;
 	private boolean canContinue, didCancel;
 	private double topLeftX, topLeftY, botLeftX, botLeftY, topRightX, topRightY;
-	private JFrame pointPickerFrame;
+	private JFrame pointPickerFrame, gridFrame;
 	private JLabel topLeftLabel, botLeftLabel, topRightLabel;
-	private Overlay gridOverlay;
-	private Roi[] gridArr, spotArr;
+	private Overlay gridOverlay, spotOverlay;
+	private Roi[] gridArr;
 	private ParticleAnalyzer particleAnalyzer;
+	private ResultsTable spotFindingResultsTable;
+	private RoiManager regionRoiManager;
+	private Polygon[] spotPolys;
 
 	@Override
 	public void run() {
@@ -77,11 +86,12 @@ public class Spandex_Particle_Counter implements Command {
 		if (!makeGrid()){
 			return;
 		}
-		detectSpots();
+		if (!detectSpots()){
+			return;
+		}
+		countParticlesInside();
+		displayResults();
 		System.out.println("Complete!");
-		// TODO: perform spot detection within each grid box
-		// TODO: Show all spot regions and allow user adjustment
-		// TODO: Count the number of particles within each spot region
 		// TODO: measure analog signal from each spot region
 	}
 
@@ -194,7 +204,7 @@ public class Spandex_Particle_Counter implements Command {
 			public void actionPerformed(ActionEvent e){
 				didCancel = true;
 				originalImage.close();
-				closeDialogAndContinue();
+				closePickerDialogAndContinue();
 			}
 		});
 		buttonPanel.add(cancelButton);
@@ -202,7 +212,7 @@ public class Spandex_Particle_Counter implements Command {
 		okButton.setEnabled(true);
 		okButton.addActionListener(new ActionListener(){
 			public void actionPerformed(ActionEvent e){
-				closeDialogAndContinue();
+				closePickerDialogAndContinue();
 			}
 		});
 		buttonPanel.add(okButton);
@@ -235,7 +245,7 @@ public class Spandex_Particle_Counter implements Command {
 		return !didCancel; // if user pressed cancel return false
 	}
 
-	private void closeDialogAndContinue(){
+	private void closePickerDialogAndContinue(){
 		canContinue = true;
 		pointPickerFrame.setVisible(false);
 		pointPickerFrame.dispose();
@@ -304,7 +314,7 @@ public class Spandex_Particle_Counter implements Command {
 			public void actionPerformed(ActionEvent e){
 				didCancel = true;
 				originalImage.close();
-				closeDialogAndContinue();
+				closeSetDialogAndContinue();
 			}
 		});
 		buttonPanel.add(cancelButton);
@@ -312,11 +322,12 @@ public class Spandex_Particle_Counter implements Command {
 		okButton.setEnabled(true);
 		okButton.addActionListener(new ActionListener(){
 			public void actionPerformed(ActionEvent e){
-				closeDialogAndContinue();
+				closeSetDialogAndContinue();
 			}
 		});
 		buttonPanel.add(okButton);
-		JFrame gridFrame = new JFrame("Spot grid");
+		
+		gridFrame = new JFrame("Spot grid");
 		gridFrame.getContentPane().add(new JLabel("Adjust spot regions and select OK"), BorderLayout.NORTH);
 		gridFrame.getContentPane().add(buttonPanel, BorderLayout.SOUTH);
 		gridFrame.pack();
@@ -339,43 +350,132 @@ public class Spandex_Particle_Counter implements Command {
 		gridArr = gridOverlay.toArray();
 		return !didCancel;
 	}
+	
+	private void closeSetDialogAndContinue(){
+		canContinue = true;
+		gridFrame.setVisible(false);
+		gridFrame.dispose();
+	}
 
-	private void detectSpots(){
+	private boolean detectSpots(){
 		gridOverlay.clear();
 		originalImage.deleteRoi();
-		ResultsTable dummyTable = new ResultsTable(ResultsTable.)
-		particleAnalyzer = new ParticleAnalyzer(ParticleAnalyzer.SHOW_NONE);
+		
+		
+		spotPolys = new Polygon[gridArr.length];
 		for(int idx = 0; idx< gridArr.length; idx++){
+			regionRoiManager = new RoiManager(false);
+			ParticleAnalyzer.setRoiManager(regionRoiManager);
+			spotFindingResultsTable = ij.measure.ResultsTable.getResultsTable();
+			particleAnalyzer = new ParticleAnalyzer(ParticleAnalyzer.SHOW_NONE, (ij.measure.Measurements.AREA + ij.measure.Measurements.CENTROID), spotFindingResultsTable, 0.0, 1e6);
+			
 			originalImage.setRoi(gridArr[idx], false);
 			ImagePlus spotRegion = originalImage.duplicate();
-			Roi newRoi = detectSpot(spotRegion);
+			Polygon thisPoly = detectSpot(spotRegion);
+			Rectangle myRect = gridArr[idx].getBounds();
+			thisPoly.translate(myRect.x, myRect.y);
+			spotPolys[idx] = thisPoly;
+			spotFindingResultsTable.reset();
 			IJ.showProgress(idx/gridArr.length);
 		}
 		IJ.showProgress(1);
+		
+		// draw these rois on the main image
+		spotOverlay = new Overlay();
+		spotOverlay.clear();
+		spotOverlay.drawBackgrounds(true);
+		spotOverlay.drawLabels(true);
+		for (int idx = 0; idx< spotPolys.length; idx++){
+			spotOverlay.add(new PolygonRoi(spotPolys[idx], PolygonRoi.POLYGON));
+		}
+		originalImage.setRoi((Roi) null);
+		originalImage.setOverlay(spotOverlay);
+		
+		// TODO Let user adjust grid locations manually if desired
+		return true;
 	}
 
-	private Roi detectSpot(ImagePlus imp){
-		// Smooth image with Kuwahara filter
-		IJ.run(imp, "Kuwahara Filter","sampling=7"); // parameter is hardcoded
+	private Polygon detectSpot(ImagePlus imp){
+		// Smooth away particles with fast median filter
+		int kernelSize = 12;
+		IJ.run(imp, "Fast Filters", "link filter=median x=" + kernelSize + " y=" + kernelSize + " preprocessing=none");
+
+		ImageStatistics myStats = imp.getStatistics(ij.measure.Measurements.MEAN + ij.measure.Measurements.MEDIAN + ij.measure.Measurements.STD_DEV); 
+		double myMean = myStats.mean;
+		double myStd = myStats.stdDev;
+		imp.setDisplayRange(myMean-2*myStd, myMean+myStd);
+		LutApplier lutAp = new LutApplier();
+		lutAp.setup("", imp);
+		lutAp.run(imp.getProcessor());
+
 		// Use Otsu's method to binarize image
-		imp.getProcessor().setAutoThreshold(AutoThresholder.Method.Triangle, false);
-		IJ.run(imp, "Convert to mask", "");
+		imp.getProcessor().setAutoThreshold(AutoThresholder.Method.Otsu, false);
+		IJ.run(imp, "Convert to Mask", "");
+
 		
 		// Perform morphological operations to adjust spot
 		Strel disk4 = Strel.Shape.DISK.fromRadius(4);
 		Strel disk6 = Strel.Shape.DISK.fromRadius(4);
 		ImageProcessor closed = Morphology.closing(imp.getProcessor(), disk4);
+		imp.setProcessor(closed);
+ 
 		IJ.run(imp, "Fill Holes (Binary/Gray)", "");
+
 		ImageProcessor opened = Morphology.opening(imp.getProcessor(), disk6);
+		imp.setProcessor(opened);
+		imp.hide();
 		
-		particleAnalyzer.analyze(new ImagePlus("opened", opened));
+		particleAnalyzer.analyze(imp);
+		Roi[] rois = regionRoiManager.getRoisAsArray();
+		double[] areas = spotFindingResultsTable.getColumnAsDoubles(spotFindingResultsTable.getColumnIndex("Area"));
+		double biggestArea = 0;
+		Polygon biggestPolygon = rois[0].getPolygon();
+		for(int idx = 0; idx<rois.length; idx++){
+			if(areas[idx] > biggestArea){
+				biggestArea = areas[idx];
+				biggestPolygon = rois[idx].getPolygon();
+			}
+		}
+		return biggestPolygon;
+	}
+	
+	private boolean countParticlesInside(){
+		// Convert to pixels
+		ArrayList<Double> xPosPix = new ArrayList<Double>();
+		ArrayList<Double> yPosPix = new ArrayList<Double>();
 		
-		return 
+		for (int particleIdx = 0; particleIdx< xPosUm.size(); particleIdx++){
+			xPosPix.add(particleIdx, xPosUm.get(particleIdx)/pixelSizeUm);
+			yPosPix.add(particleIdx, -1*yPosUm.get(particleIdx)/pixelSizeUm); // flip y axis!
+		}
+		// count particles contained within each spot polygon
+		spotCounts = new ArrayList<Integer>();
+		for (int spotIdx = 0; spotIdx< spotPolys.length; spotIdx++){
+			int particleCounts = 0;
+			for (int particleIdx = 0; particleIdx< xPosUm.size(); particleIdx++){
+				if (spotPolys[spotIdx].contains(xPosPix.get(particleIdx), yPosPix.get(particleIdx))){
+					particleCounts++;
+				}
+			}
+			spotCounts.add(spotIdx, particleCounts);
+		}
+		return true;
+	}
+	
+	private void displayResults(){
+		ResultsTable finalTab = ij.measure.ResultsTable.getResultsTable();
+		finalTab.reset();
+		for (int idx = 0; idx< spotCounts.size(); idx++){
+			finalTab.incrementCounter();
+			finalTab.addValue("Counts", spotCounts.get(idx));
+			System.out.println("" + spotCounts.get(idx));
+		}
+		finalTab.show("Results");
 	}
 
 	public static void main(final String... args) {
 		// Launch ImageJ as usual.
-		final ImageJ ij = net.imagej.Main.launch(args);
+		return;
 //
 //		// Launch the command right away.
 //		ij.command().run(Spandex_Particle_Counter.class, true);
