@@ -292,9 +292,15 @@ public class Spandex_Particle_Counter implements Command {
 			double startY = topLeftY + (idy*stepSizeDownYPix);
 			
 			for (int idx = 0; idx<arrayXSize; idx++){
-				double thisX = startX + (idx*stepSizeAcrossXPix);
-				double thisY = startY + (idx*stepSizeAcrossYPix);
-				Rectangle thisRect = new Rectangle((int)Math.round(thisX-halfWidthPix), (int)Math.round(thisY-halfWidthPix), (int)Math.round(2*halfWidthPix), (int)Math.round(2*halfWidthPix));
+				// handle out-of-bounds rectangle corners
+				double centroidX = startX + (idx*stepSizeAcrossXPix);
+				double centroidY = startY + (idx*stepSizeAcrossYPix);
+				int x0 = Math.max(0, (int) Math.round(centroidX-halfWidthPix));
+				int y0 = Math.max(0, (int) Math.round(centroidY-halfWidthPix));
+				// 1- normal case, 2- close to left/top edge, 3- close to right/bottom edge
+				int width = (int) Math.min( Math.min(2*halfWidthPix, halfWidthPix + centroidX),  originalImage.getWidth() - x0);
+				int height = (int) Math.min( Math.min(2*halfWidthPix, halfWidthPix + centroidY) , originalImage.getHeight()- y0);
+				Rectangle thisRect = new Rectangle(x0, y0, width, height);
 				gridOverlay.add(new Roi(thisRect));
 			}
 		}
@@ -360,17 +366,13 @@ public class Spandex_Particle_Counter implements Command {
 		gridOverlay.clear();
 		originalImage.deleteRoi();
 		
-		
 		spotPolys = new Polygon[gridArr.length];
 		for(int idx = 0; idx< gridArr.length; idx++){
-			regionRoiManager = new RoiManager(false);
-			ParticleAnalyzer.setRoiManager(regionRoiManager);
-			spotFindingResultsTable = ij.measure.ResultsTable.getResultsTable();
+			
 			
 			originalImage.setRoi(gridArr[idx], false);
-			ImagePlus spotRegion = originalImage.duplicate();
-			spotRegion.close();
-			Polygon thisPoly = detectSpot(spotRegion);
+
+			Polygon thisPoly = detectSpot(originalImage.duplicate());
 			Rectangle myRect = gridArr[idx].getBounds();
 			thisPoly.translate(myRect.x, myRect.y);
 			spotPolys[idx] = thisPoly;
@@ -422,6 +424,10 @@ public class Spandex_Particle_Counter implements Command {
 
 		ImageProcessor opened = Morphology.opening(imp.getProcessor(), disk6);
 		imp.setProcessor(opened);
+		
+		regionRoiManager = new RoiManager(false);
+		ParticleAnalyzer.setRoiManager(regionRoiManager);
+		spotFindingResultsTable = ij.measure.ResultsTable.getResultsTable();
 		
 		particleAnalyzer = new ParticleAnalyzer((ParticleAnalyzer.SHOW_NONE), (ij.measure.Measurements.AREA + ij.measure.Measurements.CENTROID), spotFindingResultsTable, 0.0, 1e6);
 		particleAnalyzer.analyze(imp);
