@@ -8,8 +8,6 @@ package edu.bu.ultra;
  *     http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-import net.imagej.ImageJ;
-
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
 import java.awt.Point;
@@ -48,6 +46,7 @@ import ij.process.AutoThresholder;
 import ij.process.ImageProcessor;
 import ij.process.ImageStatistics;
 import inra.ijpb.morphology.Morphology;
+import inra.ijpb.morphology.Reconstruction;
 import inra.ijpb.morphology.Strel;
 
 /**
@@ -367,10 +366,10 @@ public class Spandex_Particle_Counter implements Command {
 			regionRoiManager = new RoiManager(false);
 			ParticleAnalyzer.setRoiManager(regionRoiManager);
 			spotFindingResultsTable = ij.measure.ResultsTable.getResultsTable();
-			particleAnalyzer = new ParticleAnalyzer(ParticleAnalyzer.SHOW_NONE, (ij.measure.Measurements.AREA + ij.measure.Measurements.CENTROID), spotFindingResultsTable, 0.0, 1e6);
 			
 			originalImage.setRoi(gridArr[idx], false);
 			ImagePlus spotRegion = originalImage.duplicate();
+			spotRegion.close();
 			Polygon thisPoly = detectSpot(spotRegion);
 			Rectangle myRect = gridArr[idx].getBounds();
 			thisPoly.translate(myRect.x, myRect.y);
@@ -391,7 +390,6 @@ public class Spandex_Particle_Counter implements Command {
 		originalImage.setRoi((Roi) null);
 		originalImage.setOverlay(spotOverlay);
 		
-		// TODO Let user adjust grid locations manually if desired
 		return true;
 	}
 
@@ -419,12 +417,13 @@ public class Spandex_Particle_Counter implements Command {
 		ImageProcessor closed = Morphology.closing(imp.getProcessor(), disk4);
 		imp.setProcessor(closed);
  
-		IJ.run(imp, "Fill Holes (Binary/Gray)", "");
+		ImageProcessor ip2 = Reconstruction.fillHoles(imp.getProcessor());
+		imp.setProcessor(ip2);
 
 		ImageProcessor opened = Morphology.opening(imp.getProcessor(), disk6);
 		imp.setProcessor(opened);
-		imp.hide();
 		
+		particleAnalyzer = new ParticleAnalyzer((ParticleAnalyzer.SHOW_NONE), (ij.measure.Measurements.AREA + ij.measure.Measurements.CENTROID), spotFindingResultsTable, 0.0, 1e6);
 		particleAnalyzer.analyze(imp);
 		Roi[] rois = regionRoiManager.getRoisAsArray();
 		double[] areas = spotFindingResultsTable.getColumnAsDoubles(spotFindingResultsTable.getColumnIndex("Area"));
