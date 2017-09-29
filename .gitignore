@@ -17,6 +17,9 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+# Windows temporary files
+~$*
+
 # =========================
 # Operating System Files
 # =========================
@@ -46,5 +49,8 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
-# Ignore compiled Java plugins
+# Compiled Java plugins
 *.class
+*.jar
+*.plugin
+*.properties
