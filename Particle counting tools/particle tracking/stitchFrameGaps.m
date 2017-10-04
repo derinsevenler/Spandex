@@ -35,6 +35,7 @@ while idx<size(particleList,1)
 	else
 		idx = idx+1;
 	end
+	progressbar(idx/size(particleList,1));
 end
 
 figure; histogram(bestDistList,0:.5:100);
