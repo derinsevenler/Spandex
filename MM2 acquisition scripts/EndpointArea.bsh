@@ -6,112 +6,54 @@ import ij.io.*;
 import ij.plugin.*;
 import ij.*;
 
-// import ij.ImagePlus;
-// import ij.ImageStack;
-// import ij.ImageProcessor;
+import ij.ImagePlus;
+import ij.ImageStack;
 import ij.measure.ResultsTable;
 import ij.process.ImageStatistics;
 
-// log = mm.getLogManager();
-initExp = mmc.getExposure();
-
 // ---------------------------------------------------------------------------------
-// GET SETTINGS FROM USER
+// INITIALIZATION
 // ---------------------------------------------------------------------------------
- 
-directoryC = new DirectoryChooser("Choose the save directory:");
-directoryC.setDefaultDirectory("D:\\User_Scratch");
-saveDir = directoryC.getDirectory();
 
+initExposureTime = mmc.getExposure();
+stageSpeed = 5; // mm/s
+initObjective = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
 
 String[] objectiveArray = new String[4]; 
 objectiveArray[0]="10x   "; 
 objectiveArray[1]="20x   "; 
 objectiveArray[2]="40x   "; 
 objectiveArray[3]="50x   ";
-String[] mediaArray = new String[2]; 
-mediaArray[0]="dry   "; 
-mediaArray[1]="wet   "; 
-String[] npArray = new String[2]; 
-npArray[0]="bio-nps   "; 
-npArray[1]="nanorod   ";
-
-GenericDialog gd = new GenericDialog("Endpoint Whole Area Particle Counting");
-
-gd.addStringField("Save Directory:",saveDir, 30);
-gd.addStringField("Chip Name","chip" ,15); 
-gd.addMessage("");
-gd.addNumericField("field size X (mm)", 1.5,1);
-gd.addNumericField("field size Y (mm)", 1.5,1);
-gd.addMessage("");
-gd.addNumericField("Exposure time",initExp, 2);
-gd.addMessage("");
-
-// ???
-curObj = mmc.getConfigGroupState("Objective").getSetting("DObjective","Label").getPropertyValue();
-gd.addRadioButtonGroup("Select the Objective",objectiveArray,1,4, curObj + "   "); 
-gd.addMessage("");
-gd.addRadioButtonGroup("Select media",mediaArray,1,2,"wet   "); 
-gd.addMessage("");
-gd.addRadioButtonGroup("Nanoparticle",npArray,1,3,"nanorod   "); 
-
-
-gd.showDialog(); 
-if (gd.wasCanceled()) 
-return false; 
-
-// Get Inputs
-saveDir = gd.getNextString();
-saveFname = gd.getNextString();
-fieldSizeXmm = gd.getNextNumber();
-fieldSizeYmm = gd.getNextNumber();
-exposureTime = gd.getNextNumber();
-objLongName = gd.getNextRadioButton();
-immersionMedia = gd.getNextRadioButton(); 
-nanoparticle = gd.getNextRadioButton(); 
-
 
 
 // ---------------------------------------------------------------------------------
-// CONFIGURATION & SETUP
+// GENERATE CHIP OVERVIEW
 // ---------------------------------------------------------------------------------
 
-// Figure out the correct polarizer settings
-// For viruses, do not use polarization
-linPol1 = 0;
-// These must be initialized outside the conditional for proper scope
-qwp1 = 0; qwp2 = 0; linPol2 = 0;
-if (nanoparticle.equals("bio-nps   ")){ 
-	// turn polarization off
-	qwp1 = 60;
-	qwp2 = 351;
-	linPol2 = 0;
-} else { // we are looking at nanorods
-	qwp1 = 15;
-	qwp2 = 40;
-	linPol2 = 60;
-}
-GenericDialog gd2 = new GenericDialog("Endpoint Whole Area Particle Counting");
-gd2.addMessage("Ensure you are focused at the top-left corner of scan region, and ");
-gd2.addMessage("the polarization optics are set to : " + linPol1 + " (Left-most), " + qwp1 + " (second on left), " + qwp2 + " (lower on right), " +  linPol2 + " (upper on right).");
-gd2.showDialog();
-if (gd2.wasCanceled())
+
+GenericDialog overviewDialog = new GenericDialog("1. Generate Chip Overview");
+overviewDialog.addMessage("Ensure you are focused at the top-left corner of scan region, exposure time is OK, and ");
+overviewDialog.addMessage("the polarization optics are set to : 0 (Left-most), 60 (second on left), 351 (lower on right), 0 (upper on right).");
+overviewDialog.addMessage("");
+overviewDialog.addMessage("Overview region size in millimeters:");
+overviewDialog.addNumericField("X", 3,1);
+overviewDialog.addNumericField("Y", 8,1);
+overviewDialog.addRadioButtonGroup("Objective",objectiveArray,1,4, initObjective + "   "); 
+
+overviewDialog.showDialog();
+if (overviewDialog.wasCanceled()){
+	progressFrame.setVisible(false);
+	progressFrame.dispose();
 	return false;
+}
 
-combiner = new StackCombiner();
-ic = new ImageCalculator();
-is = new ImageStatistics();
-statOptions = is.MEDIAN;
-
-zProjector = new ZProjector();
-zProjector.setMethod(0);
-
-dark_image = "D:/User_Scratch/Derin/easyIRIS/mirror files/darkImg_easyIRIS.tif";
+overviewX = overviewDialog.getNextNumber();
+overviewY = overviewDialog.getNextNumber();
+objLongName = overviewDialog.getNextRadioButton();
 
 // Set the z-stack properties depending on the objective
 // Note that properties scale roughly with the NA, not the magnification
-// Note that the media is not considered here BUT IT SHOULD BE
-// THESE ARE PLACEHOLDERS
+// TODO: consider changing for dry media
 zStackWidthUm = 0;zStepUm = 0.0;objNA = 0.0;objMag = 0;
 switch (objLongName.substring(0,3)) {
 	case "10x":
@@ -144,37 +86,18 @@ nZPos = zStackWidthUm/zStepUm;
 burstFrameNo = 16 + 1; // frames to average at each z-position 
 
 // Set microscope configuration and get image scale factors
-mm.setExposure(exposureTime);
+mm.setExposure(initExposureTime);
 mmc.setConfig("Objective",objLongName.substring(0,3));
 imWidth = mmc.getImageWidth();
 imHeight = mmc.getImageHeight();
 pixelSizeUm = mmc.getPixelSizeUm();
 fieldOfViewXmm = imWidth*pixelSizeUm/1000.0;
 fieldOfViewYmm = imHeight*pixelSizeUm/1000.0;
-nPosX = Math.ceil(fieldSizeXmm / fieldOfViewXmm);
-nPosY = Math.ceil(fieldSizeYmm / fieldOfViewYmm);
-bitDepth = mmc.getImageBitDepth();
-
-
-// Prepare for acquisition
-mm.live().setLiveMode(false);
-liveDisplay = mm.live().getDisplay();
-if (liveDisplay != null){
-	liveDisplay.forceClosed();
-}
-mm.data().clearPipeline(); // i.e., 'on-the-fly' processors
-
-// prepare particle position list
-f = new File(saveDir + saveFname + "_particleXY.txt");
-if (!f.exists()){
-	f.createNewFile();
-}
-FileOutputStream fos = new FileOutputStream(f);
-BufferedWriter particleXYBuffer = new BufferedWriter(new OutputStreamWriter(fos));
-
+nPosX = Math.ceil(overviewX / fieldOfViewXmm);
+nPosY = Math.ceil(overviewY / fieldOfViewYmm);
 
 // Prepare Progress panel
-JFrame frame = new JFrame("Acquisition Progress");
+JFrame progressFrame = new JFrame("Acquisition Progress");
 
 Font boldFont = new Font("Deja Vu MS", Font.BOLD, 14);
 Font normalFont = new Font("Deja Vu MS", Font.PLAIN, 14);
@@ -187,15 +110,22 @@ progressPanel.setLayout(layout);
 JLabel setupLabel = new JLabel("\u2611 1. Setup");
 setupLabel.setFont(boldFont);
 progressPanel.add(setupLabel);
-JLabel initLabel = new JLabel("\u2610 2. Initialization");
-initLabel.setFont(normalFont);
-progressPanel.add(initLabel);
 
-// scan panel
+JPanel overviewPanel = new JPanel();
+GridLayout overviewLayout = new GridLayout(1, 0, 0, 20);
+overviewPanel.setLayout(overviewLayout);
+JLabel overviewLabel = new JLabel("\u2610 2. Chip overview");
+overviewLabel.setFont(normalFont);
+overviewPanel.add(overviewLabel);
+JProgressBar overviewBar = new JProgressBar(0, 100);
+overviewBar.setStringPainted(true);
+overviewPanel.add(overviewBar);
+progressPanel.add(overviewPanel);
+
 JPanel scanPanel = new JPanel();
 GridLayout scanLayout = new GridLayout(1, 0, 0, 20);
 scanPanel.setLayout(scanLayout);
-JLabel scanLabel = new JLabel("\u2610 3. Array Scanning");
+JLabel scanLabel = new JLabel("\u2610 3. Array Scan");
 scanLabel.setFont(normalFont);
 scanPanel.add(scanLabel);
 JProgressBar progressbar = new JProgressBar(0, 100);
@@ -204,7 +134,7 @@ scanPanel.add(progressbar);
 progressPanel.add(scanPanel);
 
 progressPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-frame.getContentPane().add(progressPanel, BorderLayout.NORTH);
+progressFrame.getContentPane().add(progressPanel, BorderLayout.NORTH);
 
 JPanel botPanel = new JPanel(); //bottom panel
 botPanel.setLayout(new GridLayout(0,1,0,0));
@@ -213,22 +143,21 @@ buttonPanel.setLayout(new GridLayout(1,2,20,20));
 JButton pauseButton = new JButton("Pause");
 pauseButton.setEnabled(false); // <-- TODO: implement pause functionality
 didPause = false;
-pauseHandler = new ActionListener() {
+pauseButton.addActionListener(new ActionListener() {
 	actionPerformed (e) {
 		didPause = true;
+		notification.setText("Acqusition paused");
 	}
-};
-pauseButton.addActionListener(pauseHandler);
+});
 buttonPanel.add(pauseButton);
 JButton cancelButton = new JButton("Cancel");
 didCancel = false;
-cancelHandler = new ActionListener() {
+cancelButton.addActionListener(new ActionListener() {
 	actionPerformed (e) {
 		didCancel = true;
 		notification.setText("Cancelling, please wait...");
 	}
-};
-cancelButton.addActionListener(cancelHandler);
+});
 buttonPanel.add(cancelButton);
 JLabel notification = new JLabel("", SwingConstants.CENTER);
 notification.setFont(boldFont);
@@ -237,22 +166,277 @@ botPanel.add(buttonPanel);
 botPanel.add(notification);
 
 botPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-frame.getContentPane().add(botPanel, BorderLayout.SOUTH);
+progressFrame.getContentPane().add(botPanel, BorderLayout.SOUTH);
 
-frame.pack();
-frame.setSize(300, 250);
-frame.setLocation(100,100);
-frame.setVisible(true);
-frame.setResizable(false);
+progressFrame.pack();
+progressFrame.setSize(300, 250);
+progressFrame.setLocation(100,100);
+progressFrame.setVisible(true);
+progressFrame.setResizable(false);
+
+
+combiner = new StackCombiner();
+ic = new ImageCalculator();
+is = new ImageStatistics();
+statOptions = is.MEDIAN;
+
+zProjector = new ZProjector();
+zProjector.setMethod(0);
+
+// Prepare for acquisition
+mm.live().setLiveMode(false);
+liveDisplay = mm.live().getDisplay();
+if (liveDisplay != null){
+	liveDisplay.forceClosed();
+}
+mm.data().clearPipeline(); // i.e., 'on-the-fly' processors
+
+
+// Perform rapid overview scan
+burstFrameNo = 16;
+
+startX = mmc.getXYStagePosition().getX();
+startY = mmc.getXYStagePosition().getY();
+
+ImagePlus overviewImp;
+ImagePlus thisSlice; // declaration is required for correct scope
+
+for (int idx=0; idx<nPosX; idx++){
+	thisX = startX - idx*fieldOfViewXmm*1000;
+	
+	mmc.setXYPosition(thisX+1000.0, startY+1000.0);
+	Thread.sleep((int)(overviewX/stageSpeed*1000+500));
+	mmc.setXYPosition(thisX, startY);
+	Thread.sleep(1000);
+
+	for (int idy=0; idy<nPosY; idy++){
+		thisY = startY - idy*fieldOfViewYmm*1000;
+		mmc.setXYPosition(thisX, thisY);
+		Thread.sleep(1000);
+
+		mmc.stopSequenceAcquisition();
+		mmc.clearCircularBuffer();
+		burstStack = new ImageStack((int)imWidth, (int) imHeight, burstFrameNo);
+		burstImp = new ImagePlus("burst");
+		mmc.waitForSystem();
+
+		curFrame = 0;
+		mmc.startContinuousSequenceAcquisition(0);
+		while ( curFrame < burstFrameNo ){
+			if (mmc.getRemainingImageCount() > 0) {
+				burstStack.setPixels(mmc.popNextImage(),curFrame+1);
+				curFrame++;
+			}
+			else {
+				// Wait for another image to arrive.
+				Thread.sleep(5);
+			}
+		}
+		mmc.stopSequenceAcquisition();
+		mmc.clearCircularBuffer();
+
+		// Point Grey camera issue: the first frame is always blank.
+		burstStack.deleteSlice(1);
+		burstImp.setStack(burstStack);
+		zProjector.setImage(burstImp);
+		zProjector.doProjection();
+		imp = new ImagePlus("avg frame", zProjector.getProjection().getProcessor());
+		
+		if (idy == 0) {
+ 			thisSlice = imp.duplicate();
+ 		} else {
+ 			combinedStack = combiner.combineVertically(thisSlice.getStack(), imp.getStack());
+ 			thisSlice = new ImagePlus("slice", combinedStack);
+ 		}
+
+ 		pctComplete = Math.round( (idx*nPosY+idy+1)*100/(nPosX*nPosY) );
+		overviewBar.setValue((int)pctComplete);
+
+		if(didCancel){
+			break;
+		}
+	}
+ 	// Add the preview 'slice' to the 'final preview'
+ 	if ( idx == 0){
+ 		overviewImp = thisSlice;
+ 	} else {
+ 		combinedSlices = combiner.combineHorizontally(overviewImp.getStack(), thisSlice.getStack());
+ 		overviewImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
+ 	}
+	
+	if(didCancel){
+		break;
+	}
+}
+mmc.setXYPosition(startX, startY);
+overviewLabel.setText("\u2611 2. Chip overview");
+overviewLabel.setFont(boldFont);
+
+if(didCancel){
+	progressFrame.setVisible(false);
+	progressFrame.dispose();
+	return false;
+}
+
+// Get ROI from user
+
+// All units in pixels
+// IJ.run(overviewImp, "Set Scale...", "distance=" + (Math.round((1/pixelSizeUm*100.0))/100.0) +  " known=1 pixel=1 unit=um");
+overviewImp.show();
+IJ.makeRectangle(0.1*overviewImp.getWidth(), 0.1*overviewImp.getHeight(), 0.8*overviewImp.getWidth(), 0.8*overviewImp.getHeight()); 
+ij.gui.Toolbar.getInstance().setTool("rectangle");
+
+JFrame roiSelectFrame = new JFrame("Scan region");
+
+JLabel setupLabel = new JLabel("Adjust the scan region.");
+setupLabel.setFont(normalFont);
+roiSelectFrame.getContentPane().add(setupLabel, BorderLayout.NORTH);
+
+JPanel roiButtonPanel = new JPanel(); //button panel
+roiButtonPanel.setLayout(new GridLayout(0,1,0,0));
+JPanel buttonPanel = new JPanel();
+buttonPanel.setLayout(new GridLayout(1,2,20,20));
+JButton cancelButton = new JButton("Cancel");
+didCancel = false;
+cancelButton.addActionListener(new ActionListener() {
+	actionPerformed (e) {
+		didCancel = true;
+		notification.setText("Cancelling, please wait...");
+	}
+});
+buttonPanel.add(cancelButton);
+JButton okButton = new JButton("Continue");
+clickOk = false;
+okButton.addActionListener(new ActionListener() {
+	actionPerformed (e) {
+		clickOk = true;
+	}
+});
+buttonPanel.add(okButton);
+roiButtonPanel.add(buttonPanel);
+roiButtonPanel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+roiSelectFrame.getContentPane().add(roiButtonPanel, BorderLayout.SOUTH);
+
+roiSelectFrame.pack();
+roiSelectFrame.setSize(250, 200);
+roiSelectFrame.setLocation(300,300);
+roiSelectFrame.setVisible(true);
+roiSelectFrame.setResizable(false);
+
+// wait for button press to continue
+while (!clickOk && !didCancel){
+	Thread.sleep(200);
+}
+if (didCancel){
+	mmc.setXYPosition(startX,startY);
+	roiSelectFrame.setVisible(false);
+	roiSelectFrame.dispose();
+	progressFrame.setVisible(false);
+	progressFrame.dispose();
+	return false;
+}
+rect = overviewImp.getRoi().getBounds();
+scanStartX = startX - rect.getX()*pixelSizeUm;
+scanStartY = startY - rect.getY()*pixelSizeUm;
+fieldSizeXmm = rect.getWidth()*pixelSizeUm/1000.0;
+fieldSizeYmm = rect.getHeight()*pixelSizeUm/1000.0;
+mmc.setXYPosition(scanStartX,scanStartY);
+nPosX = Math.ceil(fieldSizeXmm / fieldOfViewXmm);
+nPosY = Math.ceil(fieldSizeYmm / fieldOfViewYmm);
+
+IJ.run(overviewImp, "Crop","");
+roiSelectFrame.setVisible(false);
+roiSelectFrame.dispose();
+
+// ---------------------------------------------------------------------------------
+// GET SCAN SETTINGS FROM USER
+// ---------------------------------------------------------------------------------
+ 
+directoryC = new DirectoryChooser("Choose the save directory:");
+directoryC.setDefaultDirectory("D:\\User_Scratch");
+saveDir = directoryC.getDirectory();
+
+
+String[] mediaArray = new String[2]; 
+mediaArray[0]="dry   "; 
+mediaArray[1]="wet   "; 
+String[] npArray = new String[2]; 
+npArray[0]="bio-nps   "; 
+npArray[1]="nanorod   ";
+
+GenericDialog gd = new GenericDialog("Scan settings");
+
+gd.addStringField("Save Directory:",saveDir, 30);
+gd.addStringField("Chip Name","chip" ,15); 
+gd.addMessage("");
+gd.addRadioButtonGroup("Select media",mediaArray,1,2,"dry   "); 
+gd.addMessage("");
+gd.addRadioButtonGroup("Nanoparticle",npArray,1,3,"nanorod   "); 
+
+
+gd.showDialog(); 
+if (gd.wasCanceled()){
+	progressFrame.setVisible(false);
+	progressFrame.dispose();
+	return false; 
+}
+// Get Inputs
+saveDir = gd.getNextString();
+saveFname = gd.getNextString();
+
+immersionMedia = gd.getNextRadioButton(); 
+nanoparticle = gd.getNextRadioButton(); 
+
+
+// Figure out the correct polarizer settings
+// For viruses, do not use polarization
+linPol1 = 0;
+// These must be initialized outside the conditional for proper scope
+qwp1 = 0; qwp2 = 0; linPol2 = 0;
+exposureTime = initExposureTime;
+if (nanoparticle.equals("bio-nps   ")){ 
+	// turn polarization off
+	qwp1 = 60;
+	qwp2 = 351;
+	linPol2 = 0;
+} else { // we are looking at nanorods
+	qwp1 = 15;
+	qwp2 = 40;
+	linPol2 = 60;
+	// set the exposure time depending on media - TODO: fiure out what these should actually be
+	if(immersionMedia.equals("wet   ")){
+		exposureTime = 150;
+	} else {
+		exposureTime = 150;
+
+	}
+}
+mm.setExposure(exposureTime);
+
+GenericDialog gd2 = new GenericDialog("Single particle scan");
+gd2.addMessage("Set polarization optics to : " + linPol1 + " (Left-most), " + qwp1 + " (second on left), " + qwp2 + " (lower on right), " +  linPol2 + " (upper on right).");
+gd2.showDialog();
+if (gd2.wasCanceled()){
+	progressFrame.setVisible(false);
+	progressFrame.dispose();
+	return false;
+}
+
+
+// prepare particle position list
+f = new File(saveDir + saveFname + "_particleXY.txt");
+if (!f.exists()){
+	f.createNewFile();
+}
+FileOutputStream fos = new FileOutputStream(f);
+BufferedWriter particleXYBuffer = new BufferedWriter(new OutputStreamWriter(fos));
+
 
 // ---------------------------------------------------------------------------------
 // DETERMINE CHIP FOCUS
 // ---------------------------------------------------------------------------------
 
 IJ.log("Focusing in the four corners:");
-startXY = mmc.getXYStagePosition();
-startX = startXY.getX();
-startY = startXY.getY();
 
 // Set up autofocus based on the objective we are using
 afMgmt = mm.getAutofocusManager();
@@ -265,27 +449,25 @@ af.setPropertyValue("2nd step number", "" + 10);
 af.setPropertyValue("Threshold", "" + .5);
 af.setPropertyValue("Crop ratio", "" + 1);
 
-IJ.log("top left...");
 // af.fullFocus();
 topLeftZ = mmc.getPosition(); // we should already be in focus here.
 IJ.log("Top Right:");
-mmc.setXYPosition(startX-1000.0*fieldSizeXmm, startY);
+mmc.setXYPosition(scanStartX-1000.0*fieldSizeXmm, scanStartY);
 // af.fullFocus();
 topRightZ = mmc.getPosition();
 IJ.log("Bottom Left:");
-mmc.setXYPosition(startX, startY-1000.0*fieldSizeYmm);
+mmc.setXYPosition(scanStartX, scanStartY-1000.0*fieldSizeYmm);
 // af.fullFocus();
 botLeftZ = mmc.getPosition(); // we should already be in focus here.
 IJ.log("Bottom Right:");
-mmc.setXYPosition(startX-1000.0*fieldSizeXmm, startY-1000.0*fieldSizeYmm);
+mmc.setXYPosition(scanStartX-1000.0*fieldSizeXmm, scanStartY-1000.0*fieldSizeYmm);
 // af.fullFocus();
 botRightZ = mmc.getPosition();
 
-mmc.setXYPosition(startX,startY);
+mmc.setXYPosition(scanStartX,scanStartY);
 Thread.sleep(1000);
 
-initLabel.setText("\u2611 2. Initialization");
-initLabel.setFont(boldFont);
+
 // ---------------------------------------------------------------------------------
 // SCANNING
 // ---------------------------------------------------------------------------------
@@ -293,135 +475,102 @@ initLabel.setFont(boldFont);
 ImagePlus finalImp;
 ImagePlus thisSlice; // declaration is required for correct scope
 
-ImageStack burstStack = new ImageStack((int)imWidth, (int) imHeight, (int)burstFrameNo);
-ImagePlus burstImp = new ImagePlus("burst");
-
-
-acquisitionLoop: {
-	for (int idx=0; idx<nPosX; idx++){
+for (int idx=0; idx<nPosX; idx++){
+	// Coordinate information for dead-reckoning X,Y,Z
+	thisX = scanStartX - idx*fieldOfViewXmm*1000;
+	colStartZ = topLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(topRightZ-topLeftZ);
+	colEndZ = botLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(botRightZ-botLeftZ);
+	
+	mmc.setXYPosition(thisX+1000.0, scanStartY+1000.0);
+	Thread.sleep((int)(fieldSizeYmm/stageSpeed*1000+1000));
+	mmc.setXYPosition(thisX, scanStartY);
+	Thread.sleep(1000);
+	
+	for (int idy=0; idy<nPosY; idy++){
 		// Coordinate information for dead-reckoning X,Y,Z
-		thisX = startX - idx*fieldOfViewXmm*1000;
-		colStartZ = topLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(topRightZ-topLeftZ);
-		colEndZ = botLeftZ + ((idx*fieldOfViewXmm)/fieldSizeXmm)*(botRightZ-botLeftZ);
+		thisY = scanStartY - idy*fieldOfViewYmm*1000;
+		thisZ = colStartZ + ((idy*fieldOfViewYmm)/fieldSizeYmm)*(colStartZ-colEndZ);
+		// Move in X,Y,Z
+		mmc.setXYPosition(thisX, thisY);
+		mmc.setPosition(thisZ);
+		Thread.sleep(1000);
 
-		for (int idy=0; idy<nPosY; idy++){
-			// Coordinate information for dead-reckoning X,Y,Z
-			thisY = startY - idy*fieldOfViewYmm*1000;
-			thisZ = colStartZ + ((idy*fieldOfViewYmm)/fieldSizeYmm)*(colStartZ-colEndZ);
-			// Move in X,Y,Z
-			mmc.setXYPosition(thisX, thisY);
-			mmc.setPosition(thisZ);
-			Thread.sleep(1000);
-			
-
-			// Create Preview -------------------------------------------
+		// Take Z-stack -------------------------------------------
+		zStart = thisZ-zStackWidthUm/2;
+		ImageStack thisZStack = new ImageStack((int)imWidth, (int)imHeight, (int)nZPos);
+		for (int zidx=0; zidx< nZPos; zidx++) {
+			mmc.setPosition(zStart+zidx*zStepUm);
 			mmc.stopSequenceAcquisition();
 			mmc.clearCircularBuffer();
+			ImageStack burstStack = new ImageStack((int)imWidth, (int) imHeight, (int)burstFrameNo);
+			ImagePlus burstImp = new ImagePlus("burst");
 			mmc.waitForSystem();
 
-			image = mm.live().snap(false).get(0);
-			ip = mm.data().ij().createProcessor(image).bin(5);
-			imp = new ImagePlus(saveDir, ip);
-			IJ.run(imp,"Fast Filters", "link filter=median x=15 y=15 preprocessing=none subtract offset=32768");
-			IJ.run(imp,"8-bit","");
-			// Rescale to improve background homogneity
-			myStats = is.getStatistics(imp.getProcessor(), statOptions, imp.getCalibration());
-			myMedian = myStats.median;
-			IJ.run(imp,"Add...", "value=" + (125 - myMedian));
-			// imp.show();
-			// Add this to the preview slice
-			if (idy == 0) {
-				thisSlice = imp.duplicate();
-			} else {
-				combinedStack = combiner.combineVertically(thisSlice.getStack(), imp.getStack());
-				thisSlice = new ImagePlus("slice", combinedStack);
-			}
-
-			// Take Z-stack -------------------------------------------
-			zStart = thisZ-zStackWidthUm/2;
-			ImageStack thisZStack = new ImageStack((int)imWidth, (int)imHeight, (int)nZPos);
-			for (int zidx=0; zidx< nZPos; zidx++) {
-				mmc.setPosition(zStart+zidx*zStepUm);
-				mmc.stopSequenceAcquisition();
-				mmc.clearCircularBuffer();
-				mmc.waitForSystem();
-
-				mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
-				mmc.startContinuousSequenceAcquisition(exposureTime/10.0);
-				curFrame = 0;
-				while ( curFrame < burstFrameNo ){
-					if (mmc.getRemainingImageCount() > 0) {
-						burstStack.setPixels(mmc.popNextImage(),curFrame+1);
-						curFrame++;
-					}
-					else {
-						// Wait for another image to arrive.
-						Thread.sleep((int) Math.round(Math.min(.5 * exposureTime, 20)));
-					}
+			mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
+			mmc.startContinuousSequenceAcquisition(exposureTime/10.0);
+			curFrame = 0;
+			while ( curFrame < burstFrameNo ){
+				if (mmc.getRemainingImageCount() > 0) {
+					burstStack.setPixels(mmc.popNextImage(),curFrame+1);
+					curFrame++;
 				}
-				mmc.stopSequenceAcquisition();
-				mmc.clearCircularBuffer();
-
-				// Point Grey camera issue: the first frame is always blank.
-				burstStack.deleteSlice(1);
-				burstImp.setStack(burstStack);
-				zProjector.setImage(burstImp);
-				zProjector.doProjection();
-				thisZStack.setPixels(zProjector.getProjection().getProcessor().getPixels(), zidx+1);
-				if(didCancel){
-					break;
+				else {
+					// Wait for another image to arrive.
+					Thread.sleep((int) Math.round(Math.min(.5 * exposureTime, 20)));
 				}
 			}
+			mmc.stopSequenceAcquisition();
+			mmc.clearCircularBuffer();
+
+			// Point Grey camera issue: the first frame is always blank.
+			burstStack.deleteSlice(1);
+			burstImp.setStack(burstStack);
+			zProjector.setImage(burstImp);
+			zProjector.doProjection();
+			thisZStack.setPixels(zProjector.getProjection().getProcessor().getPixels(), zidx+1);
 			if(didCancel){
 				break;
 			}
-
-			// Perform Particle detection -------------------------------------------
-			ImagePlus stackPlus = new ImagePlus("current Z stack", thisZStack);
-
-			IJ.run(stackPlus,"Spandex Stack", "size=15 brightness=8 choose=D:\\User_Scratch\\_instrument_files\\resources\\nir_psf.tif");
-			
-			// Save Particle Positions -------------------------------------------
-			IJ.renameResults("Particle Results","Results");
-			resultsTable = ResultsTable.getResultsTable();
-			xCol =  resultsTable.getColumnIndex("x");
-			yCol =  resultsTable.getColumnIndex("y");
-			xPos = resultsTable.getColumnAsDoubles(xCol);
-			yPos = resultsTable.getColumnAsDoubles(yCol);
-			for (k=0; k<xPos.length; k+=1){
-				particleXYBuffer.write( IJ.d2s(xPos[k]*pixelSizeUm-(thisX-startX),3) + ", " + IJ.d2s(-yPos[k]*pixelSizeUm+(thisY-startY),3));
-				particleXYBuffer.newLine();
-			}
-			IJ.selectWindow("Results");
-			IJ.run("Close");
-
-			// Check in with UI
-			if(didCancel){
-				break;
-			}
-			pctComplete = Math.round( (idx*nPosY+idy+1)*100/(nPosX*nPosY) );
-			progressbar.setValue((int)pctComplete);
-		}
-
-		// Add the preview 'slice' to the 'final preview'
-		if ( idx == 0){
-			finalImp = thisSlice;
-		} else {
-			newSlice = thisSlice;
-			combinedSlices = combiner.combineHorizontally(finalImp.getStack(), thisSlice.getStack());
-			// finalImp.close();
-			// thisSlice.close();
-			finalImp = new ImagePlus(saveFname + "_composite_image", combinedSlices);
 		}
 		if(didCancel){
 			break;
 		}
+
+		// Perform Particle detection -------------------------------------------
+		ImagePlus stackPlus = new ImagePlus("current Z stack", thisZStack);
+
+		IJ.run(stackPlus,"Spandex Stack", "size=15 brightness=8 choose=D:\\User_Scratch\\_instrument_files\\resources\\nir_psf.tif");
+		
+		// Save Particle Positions -------------------------------------------
+		IJ.renameResults("Particle Results","Results");
+		resultsTable = ResultsTable.getResultsTable();
+		xCol =  resultsTable.getColumnIndex("x");
+		yCol =  resultsTable.getColumnIndex("y");
+		xPos = resultsTable.getColumnAsDoubles(xCol);
+		yPos = resultsTable.getColumnAsDoubles(yCol);
+		for (k=0; k<xPos.length; k+=1){
+			particleXYBuffer.write( IJ.d2s(xPos[k]*pixelSizeUm-(thisX-scanStartX),3) + ", " + IJ.d2s(-yPos[k]*pixelSizeUm+(thisY-scanStartY),3));
+			particleXYBuffer.newLine();
+		}
+		IJ.selectWindow("Results");
+		IJ.run("Close");
+
+		// Check in with UI
+		if(didCancel){
+			break;
+		}
+		pctComplete = Math.round( (idx*nPosY+idy+1)*100/(nPosX*nPosY) );
+		progressbar.setValue((int)pctComplete);
 	}
-	scanLabel.setText("\u2611 3. Array Scanning");
-	scanLabel.setFont(boldFont);
-	progressbar.setValue(100);
-	notification.setText("Saving...");
+
+	if(didCancel){
+		break;
+	}
 }
+scanLabel.setText("\u2611 3. Array Scanning");
+scanLabel.setFont(boldFont);
+progressbar.setValue(100);
+notification.setText("Saving...");
 
 // ---------------------------------------------------------------------------------
 // SAVE RESULTS 
@@ -430,17 +579,15 @@ acquisitionLoop: {
 particleXYBuffer.close();
 fos.close();
 System.gc();
-mmc.setXYPosition(startX, startY);
+mmc.setXYPosition(scanStartX, scanStartY);
 mmc.setPosition(topLeftZ);
 mmc.waitForSystem();
-finalImp.show();
 
 if(didCancel){
 	notification.setText("Acquisition Canceled.");
 } else {
-	FileSaver fs = new FileSaver(finalImp);
+	FileSaver fs = new FileSaver(overviewImp);
 	fs.saveAsTiff(saveDir + saveFname + "_preview_image.tif");
 	notification.setText("Scan Complete!");
-	IJ.log("Scan complete.\nPreview image saved as \n" + saveDir + saveFname + "_preview_image.tif \nParticle positions saved in \n" + saveDir + saveFname + "_particleXY.txt");
+	// IJ.log("Scan complete.\nPreview image saved as \n" + saveDir + saveFname + "_preview_image.tif \nParticle positions saved in \n" + saveDir + saveFname + "_particleXY.txt");
 }
-
