@@ -36,9 +36,8 @@ public class Spandex_Stack implements PlugIn {
 	private int radiusThreshold;
 	private int contrastThreshold;
 	private boolean showIntermediateImages;
-	private int imWidth;
-	private int imHeight;
-	private int zSize;
+	private int imWidth, imHeight, zSize;
+	private int kernelSize;
 
 	private ImagePlus rawImgPlus, nirImagePlus, psf, displayImage;
 
@@ -52,6 +51,7 @@ public class Spandex_Stack implements PlugIn {
 	private double[] yPos;
 	private List<Double> xPosFiltered;
 	private List<Double> yPosFiltered;
+	private List<Double> particleNir;
 	private boolean foundParticle=true;
 
 	private IterativeEnums.PreconditionerType preconditioner;
@@ -96,7 +96,7 @@ public class Spandex_Stack implements PlugIn {
 		ImagePlus medianImage = rawImgPlus.duplicate();
 		medianImage.setTitle("Background Image");
 		// Uses the 'Fast Filters' plugin
-		int kernelSize = (int)(Math.round(2*radiusThreshold));
+
 		// int imgMean = (int)(Math.round(rawImgPlus.getProcessor().getStatistics().mean));
 		IJ.run(medianImage, "Fast Filters", "link filter=median x=" + kernelSize + " y=" + kernelSize + " preprocessing=none stack");
 		
@@ -164,7 +164,7 @@ public class Spandex_Stack implements PlugIn {
 		}
 
 		// Perform deconvolution
-		IJ.run(nirPlus, "Gaussian Blur...", "radius=1.5");
+		IJ.run(nirPlus, "Gaussian Blur...", "radius=" + kernelSize);
 
 		//init options for deconv and do deconv
 		boolean autoStoppingTol = true;
@@ -251,12 +251,15 @@ public class Spandex_Stack implements PlugIn {
 	}
 
 	private void filterKeyPoints(){
-		// delete any keypoints within the bare Si region
+		// TODO: filter particles based on PSF, brightness etc
+
 		xPosFiltered = new ArrayList<Double>();
 		yPosFiltered = new ArrayList<Double>();
 		for (int n = 0; n<xPos.length; n++){
 			xPosFiltered.add(xPos[n]);
 			yPosFiltered.add(yPos[n]);
+			double myNir = wshedimp.getPixel((int) Math.round(xPos[n]), (int) Math.round(yPos[n]));
+			particleNir.add(myNir);
 		}
 	}
 
@@ -338,6 +341,7 @@ public class Spandex_Stack implements PlugIn {
 		for (int n = 0; n<nParticles; n++){
 			resultsTable.setValue("x", n, xPosFiltered.get(n));
 			resultsTable.setValue("y", n, yPosFiltered.get(n));
+			resultsTable.setValue("nir", n, particleNir.get(n));
 		}
 		resultsTable.show("Particle Results");
 	}
@@ -356,6 +360,8 @@ public class Spandex_Stack implements PlugIn {
 		radiusThreshold = (int) gd.getNextNumber();
 		contrastThreshold = (int) gd.getNextNumber();
 		showIntermediateImages = gd.getNextBoolean();
+
+		kernelSize = (int)(Math.round(2*radiusThreshold));
 		return true;
 	}
 
