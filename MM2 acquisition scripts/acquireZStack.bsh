@@ -102,14 +102,15 @@ thisZ = mmc.getPosition();
 zStart = thisZ-zStackWidthUm/2;
 ImageStack thisZStack = new ImageStack((int)imWidth, (int)imHeight, (int)nZPos);
 
-ImageStack burstStack = new ImageStack((int)imWidth, (int) imHeight, (int)burstFrameNo);
-ImagePlus burstImp = new ImagePlus("burst");
 for (int zidx=0; zidx< nZPos; zidx++) {
 	mmc.setPosition(zStart+zidx*zStepUm);
+	
 	mmc.stopSequenceAcquisition();
 	mmc.clearCircularBuffer();
+	
+	ImageStack burstStack = new ImageStack((int)imWidth, (int) imHeight, (int)burstFrameNo);
+	ImagePlus burstImp = new ImagePlus("burst");
 	mmc.waitForSystem();
-
 	mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
 	mmc.startContinuousSequenceAcquisition(exposureTime/10.0);
 	curFrame = 0;
@@ -120,7 +121,7 @@ for (int zidx=0; zidx< nZPos; zidx++) {
 		}
 		else {
 			// Wait for another image to arrive.
-			Thread.sleep(20);
+			Thread.sleep(5);
 		}
 	}
 	mmc.stopSequenceAcquisition();
