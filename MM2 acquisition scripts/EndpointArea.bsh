@@ -472,6 +472,11 @@ Thread.sleep(1000);
 // SCANNING
 // ---------------------------------------------------------------------------------
 
+// Shift particle positions so they line up with the overview image:
+// https://github.com/derinsevenler/Spandex/issues/34
+shiftParticleXUm = -20.2;
+shiftParticleYUm = 12.3;
+
 ImagePlus finalImp;
 ImagePlus thisSlice; // declaration is required for correct scope
 
@@ -549,7 +554,7 @@ for (int idx=0; idx<nPosX; idx++){
 		xPos = resultsTable.getColumnAsDoubles(xCol);
 		yPos = resultsTable.getColumnAsDoubles(yCol);
 		for (k=0; k<xPos.length; k+=1){
-			particleXYBuffer.write( IJ.d2s(xPos[k]*pixelSizeUm-(thisX-scanStartX),3) + ", " + IJ.d2s(-yPos[k]*pixelSizeUm+(thisY-scanStartY),3));
+			particleXYBuffer.write( IJ.d2s(xPos[k]*pixelSizeUm-(thisX-scanStartX)+shiftParticleXUm,3) + ", " + IJ.d2s(-yPos[k]*pixelSizeUm+(thisY-scanStartY)+shiftParticleYUm,3));
 			particleXYBuffer.newLine();
 		}
 		IJ.selectWindow("Results");
