@@ -46,7 +46,7 @@ import ij.process.AutoThresholder;
 import ij.process.ImageProcessor;
 import ij.process.ImageStatistics;
 import inra.ijpb.morphology.Morphology;
-import inra.ijpb.morphology.Reconstruction;
+import inra.ijpb.morphology.GeodesicReconstruction;
 import inra.ijpb.morphology.Strel;
 
 /**
@@ -419,7 +419,7 @@ public class Spandex_Particle_Counter implements Command {
 		ImageProcessor closed = Morphology.closing(imp.getProcessor(), disk4);
 		imp.setProcessor(closed);
  
-		ImageProcessor ip2 = Reconstruction.fillHoles(imp.getProcessor());
+		ImageProcessor ip2 = GeodesicReconstruction.fillHoles(imp.getProcessor());
 		imp.setProcessor(ip2);
 
 		ImageProcessor opened = Morphology.opening(imp.getProcessor(), disk6);
