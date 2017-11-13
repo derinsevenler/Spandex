@@ -19,15 +19,15 @@ import ij.gui.OvalRoi;
 import ij.gui.Overlay;
 import ij.gui.Roi;
 import ij.measure.ResultsTable;
+
 import ij.plugin.PlugIn;
 import ij.process.FloatProcessor;
 import ij.process.ImageConverter;
 import ij.process.ImageProcessor;
 import ij.plugin.ImageCalculator;
-
+import ij.plugin.filter.ParticleAnalyzer;
 import ij.plugin.filter.RankFilters;
 import inra.ijpb.watershed.*;
-//import inra.ijpb.morphology.*;
 
 
 public class Spandex_Stack implements PlugIn {
@@ -45,13 +45,16 @@ public class Spandex_Stack implements PlugIn {
 	private FloatProcessor minVals;
 	private FloatProcessor maxIdx;
 	private FloatProcessor minIdx;
-	private FloatProcessor nirs;
+	private FloatProcessor nirs, pps;
 
 	private double[] xPos;
 	private double[] yPos;
+	private double[] area;
 	private List<Double> xPosFiltered;
 	private List<Double> yPosFiltered;
 	private List<Double> particleNir;
+	private List<Double> particlePps;
+	private List<Double> particleAreas;
 	private boolean foundParticle=true;
 
 	private IterativeEnums.PreconditionerType preconditioner;
@@ -65,6 +68,7 @@ public class Spandex_Stack implements PlugIn {
 	
 	private ImagePlus[][] psfArr;
 	private String psfPath;
+	private ImagePlus nirPlusOrig;
 
 	public void run(String arg) {
 		if (showDialog()) {
@@ -153,18 +157,21 @@ public class Spandex_Stack implements PlugIn {
 		// Calculate the NIR and PPS
 		nirs = new FloatProcessor(imWidth, imHeight);
 		float[] nirPixs = (float[]) nirs.getPixels();
+		pps = new FloatProcessor(imWidth, imHeight);
+		float[] ppsPixs = (float[]) pps.getPixels();
 		for (int idx = 0; idx<maxValPixs.length; idx++){
 			nirPixs[idx] = ((float)(maxValPixs[idx]) - (float)(minValPixs[idx]));
+			ppsPixs[idx] = (float)(maxIdxPixs[idx] - minIdxPixs[idx]);
 		}
 		ImagePlus nirPlus = new ImagePlus("Normalized Intensity Range", nirs);
-
+		nirPlusOrig = nirPlus.duplicate();
 		if (showIntermediateImages){
 			ImagePlus nirShow = nirPlus.duplicate();
 			nirShow.show();
 		}
 
 		// Perform deconvolution
-		IJ.run(nirPlus, "Gaussian Blur...", "radius=" + kernelSize);
+		IJ.run(nirPlus, "Gaussian Blur...", "radius=" + radiusThreshold/10.0);
 
 		//init options for deconv and do deconv
 		boolean autoStoppingTol = true;
@@ -223,43 +230,57 @@ public class Spandex_Stack implements PlugIn {
 		//init result of morph ops
 		ImagePlus check = new ImagePlus("Particles",finim);
 		//detect particles
-		IJ.run(check,"Analyze Particles...", "size=0-400 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
+		int opts =  ParticleAnalyzer.SHOW_RESULTS | ParticleAnalyzer.EXCLUDE_EDGE_PARTICLES | ParticleAnalyzer.CLEAR_WORKSHEET;
+		int measurements = ParticleAnalyzer.AREA | ParticleAnalyzer.CENTROID;
+		ParticleAnalyzer analyzer = new ParticleAnalyzer(opts, measurements, ResultsTable.getResultsTable(), 0,400,0.4,1.0);
+		analyzer.analyze(check);
+//		IJ.run(check,"Analyze Particles...", "size=0-400 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
 
 	
 		ResultsTable resultsTable = ResultsTable.getResultsTable();
 		
 
-		int xCol = resultsTable.getColumnIndex("XStart");
+		int xCol = resultsTable.getColumnIndex("X");
 		if(xCol==ResultsTable.COLUMN_NOT_FOUND){
 			foundParticle=false;
 			IJ.error("No particle is found");
 			return nirdisp;
 		}
 
-		int yCol =  resultsTable.getColumnIndex("YStart");
+		int yCol =  resultsTable.getColumnIndex("Y");
 
 		xPos = resultsTable.getColumnAsDoubles(xCol);
 		yPos = resultsTable.getColumnAsDoubles(yCol);
+		area = resultsTable.getColumnAsDoubles(resultsTable.getColumnIndex("Area"));
 		
 		if (!showIntermediateImages){
 			IJ.selectWindow("Results");
-			IJ.run("Close");
-			IJ.selectWindow("ROI Manager");
 			IJ.run("Close");
 		}
 		return nirdisp;
 	}
 
 	private void filterKeyPoints(){
-		// TODO: filter particles based on PSF, brightness etc
+		// TODO: filter particles based on blob properties (shape, size, brightness etc)
 
 		xPosFiltered = new ArrayList<Double>();
 		yPosFiltered = new ArrayList<Double>();
+		particleNir = new ArrayList<Double>();
+		particlePps = new ArrayList<Double>();
+		particleAreas = new ArrayList<Double>();
+		
 		for (int n = 0; n<xPos.length; n++){
 			xPosFiltered.add(xPos[n]);
+			
 			yPosFiltered.add(yPos[n]);
-			double myNir = wshedimp.getPixel((int) Math.round(xPos[n]), (int) Math.round(yPos[n]));
+			
+			double myNir = nirPlusOrig.getProcessor().getInterpolatedPixel(xPos[n], yPos[n]);
 			particleNir.add(myNir);
+			
+			double myPps = pps.getInterpolatedPixel(xPos[n], yPos[n]);
+			particlePps.add(myPps);
+			
+			particleAreas.add(area[n]);
 		}
 	}
 
@@ -328,7 +349,7 @@ public class Spandex_Stack implements PlugIn {
 		// Create an overlay to show particles
 		Overlay particleOverlay = new Overlay();
 		for (int n = 0; n<nParticles; n++){
-			Roi thisParticle = new OvalRoi(xPosFiltered.get(n)-4, yPosFiltered.get(n)-4, 16, 16);
+			Roi thisParticle = new OvalRoi(xPosFiltered.get(n)-8, yPosFiltered.get(n)-8, 16, 16);
 			thisParticle.setStrokeColor(Color.red);
 			particleOverlay.add(thisParticle);
 		}
@@ -341,7 +362,9 @@ public class Spandex_Stack implements PlugIn {
 		for (int n = 0; n<nParticles; n++){
 			resultsTable.setValue("x", n, xPosFiltered.get(n));
 			resultsTable.setValue("y", n, yPosFiltered.get(n));
-			resultsTable.setValue("nir", n, particleNir.get(n));
+			resultsTable.setValue("NIR", n, particleNir.get(n));
+			resultsTable.setValue("PPS", n, particlePps.get(n));
+			resultsTable.setValue("Area", n, particleAreas.get(n));
 		}
 		resultsTable.show("Particle Results");
 	}

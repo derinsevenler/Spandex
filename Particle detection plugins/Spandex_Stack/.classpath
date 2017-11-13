@@ -27,6 +27,6 @@
 			<attribute name="maven.pomderived" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="/Applications/Fiji.app/plugins/parallel_iterative_deconvolution-1.9.jar"/>
+	<classpathentry kind="lib" path="/Applications/ImageJ/plugins/parallel_iterative_deconvolution-1.9.jar"/>
 	<classpathentry kind="output" path="target/classes"/>
 </classpath>
