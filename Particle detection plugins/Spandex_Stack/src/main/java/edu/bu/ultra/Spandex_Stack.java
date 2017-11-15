@@ -49,12 +49,12 @@ public class Spandex_Stack implements PlugIn {
 
 	private double[] xPos;
 	private double[] yPos;
-	private double[] area;
+	private double[] area, circularity, perimeter;
 	private List<Double> xPosFiltered;
 	private List<Double> yPosFiltered;
 	private List<Double> particleNir;
 	private List<Double> particlePps;
-	private List<Double> particleAreas;
+	private List<Double> particleAreas, circularities, perimeters;
 	private boolean foundParticle=true;
 
 	private IterativeEnums.PreconditionerType preconditioner;
@@ -231,7 +231,7 @@ public class Spandex_Stack implements PlugIn {
 		ImagePlus check = new ImagePlus("Particles",finim);
 		//detect particles
 		int opts =  ParticleAnalyzer.SHOW_RESULTS | ParticleAnalyzer.EXCLUDE_EDGE_PARTICLES | ParticleAnalyzer.CLEAR_WORKSHEET;
-		int measurements = ParticleAnalyzer.AREA | ParticleAnalyzer.CENTROID;
+		int measurements = ParticleAnalyzer.AREA | ParticleAnalyzer.CENTROID | ParticleAnalyzer.SHAPE_DESCRIPTORS | ParticleAnalyzer.MEAN | ParticleAnalyzer.PERIMETER;
 		ParticleAnalyzer analyzer = new ParticleAnalyzer(opts, measurements, ResultsTable.getResultsTable(), 0,400,0.4,1.0);
 		analyzer.analyze(check);
 //		IJ.run(check,"Analyze Particles...", "size=0-400 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
@@ -252,6 +252,8 @@ public class Spandex_Stack implements PlugIn {
 		xPos = resultsTable.getColumnAsDoubles(xCol);
 		yPos = resultsTable.getColumnAsDoubles(yCol);
 		area = resultsTable.getColumnAsDoubles(resultsTable.getColumnIndex("Area"));
+		circularity = resultsTable.getColumnAsDoubles(resultsTable.getColumnIndex("Circ."));
+		perimeter = resultsTable.getColumnAsDoubles(resultsTable.getColumnIndex("Perim."));
 		
 		if (!showIntermediateImages){
 			IJ.selectWindow("Results");
@@ -268,10 +270,11 @@ public class Spandex_Stack implements PlugIn {
 		particleNir = new ArrayList<Double>();
 		particlePps = new ArrayList<Double>();
 		particleAreas = new ArrayList<Double>();
+		circularities = new ArrayList<Double>();
+		perimeters = new ArrayList<Double>();
 		
 		for (int n = 0; n<xPos.length; n++){
 			xPosFiltered.add(xPos[n]);
-			
 			yPosFiltered.add(yPos[n]);
 			
 			double myNir = nirPlusOrig.getProcessor().getInterpolatedPixel(xPos[n], yPos[n]);
@@ -281,6 +284,8 @@ public class Spandex_Stack implements PlugIn {
 			particlePps.add(myPps);
 			
 			particleAreas.add(area[n]);
+			circularities.add(circularity[n]);
+			perimeters.add(perimeter[n]);
 		}
 	}
 
@@ -365,6 +370,8 @@ public class Spandex_Stack implements PlugIn {
 			resultsTable.setValue("NIR", n, particleNir.get(n));
 			resultsTable.setValue("PPS", n, particlePps.get(n));
 			resultsTable.setValue("Area", n, particleAreas.get(n));
+			resultsTable.setValue("Perimeter", n, perimeters.get(n));
+			resultsTable.setValue("Circularity", n, circularities.get(n));
 		}
 		resultsTable.show("Particle Results");
 	}
