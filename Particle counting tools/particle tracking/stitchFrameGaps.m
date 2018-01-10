@@ -39,3 +39,4 @@ while idx<size(particleList,1)
 end
 
 figure; histogram(bestDistList,0:.5:100);
+xlabel('Particle best distances for frame gap stitching');
