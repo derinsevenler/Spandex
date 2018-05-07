@@ -56,16 +56,6 @@ public class Spandex_Stack implements PlugIn {
 	private List<Double> particlePps;
 	private List<Double> particleAreas, circularities, perimeters;
 	private boolean foundParticle=true;
-
-	private IterativeEnums.PreconditionerType preconditioner;
-	private double preconditionerTol;
-	private IterativeEnums.BoundaryType boundary;
-	private IterativeEnums.ResizingType resizing;
-	private Enums.OutputType output;
-	private int maxIters;
-	private boolean showIteration;
-	private MRNSDOptions options;
-	
 	private ImagePlus[][] psfArr;
 	private String psfPath;
 	private ImagePlus nirPlusOrig;
@@ -173,67 +163,15 @@ public class Spandex_Stack implements PlugIn {
 		// Perform deconvolution
 		IJ.run(nirPlus, "Gaussian Blur...", "radius=" + radiusThreshold/10.0);
 
-		//init options for deconv and do deconv
-		boolean autoStoppingTol = true;
-		boolean logConvergence = false;
-		double stoppingTol = 0;
-		double threshold = 0;
-		boolean useThreshold = false;
-		options  = new MRNSDOptions(autoStoppingTol,stoppingTol,useThreshold,threshold,logConvergence);
+		// apply brightness threshold threshold
+		ImagePlus nirDisp = nirPlus.duplicate(); 
+		IJ.setThreshold(nirPlus, contrastThreshold, nirPlus.getProcessor().getMax());
 		
-		preconditioner = IterativeEnums.PreconditionerType.valueOf("FFT");
-		preconditionerTol = -1;
-		boundary = IterativeEnums.BoundaryType.valueOf("REFLEXIVE");
-		resizing = IterativeEnums.ResizingType.valueOf("AUTO");
-		output = Enums.OutputType.valueOf("SAME_AS_SOURCE");
-		maxIters = 9;
-		showIteration = true;
-
-		new MRNSDDoubleIterativeDeconvolver2D(nirPlus, psfArr, preconditioner, preconditionerTol, 
-				boundary, resizing, output, maxIters, showIteration, options);
-
-		// take original
-		ImagePlus nirpro = nirPlus.duplicate();
-		ImagePlus nirdisp = nirPlus.duplicate();
-		IJ.run(nirpro,"Invert","");
-
-		//take inverted
-		ImageProcessor nirprop = nirpro.getProcessor();
-		
-		// convert to 8 bit and apply Local Adaptive Threshold with Bernsen method
-		ImageConverter imconv = new ImageConverter(nirPlus);
-		imconv.convertToGray8();
-		ImagePlus nirPlus1 = Bernsen(nirPlus,radiusThreshold,contrastThreshold,0,true);
-		ImagePlus showex = nirPlus1.duplicate();
-		if(showIntermediateImages){
-		showex.show();
-		}
-		ImageProcessor nirbip = nirPlus1.getProcessor();
-		
-		// do watershed
-		WatershedTransform2D wshed = new WatershedTransform2D(nirprop,nirbip);
-		ImageProcessor wshedim = wshed.apply();
-		ImagePlus wshedimp = new ImagePlus("watershed",wshedim);
-		if(showIntermediateImages){
-		wshedimp.show();
-		}
-
-
-		// apply watershed threshold
-		double maxval = wshedim.getMax();
-		IJ.setThreshold(wshedimp, .99, maxval);
-		IJ.run(wshedimp,"Make Binary","");
-		ImageProcessor finim = wshedimp.getProcessor();
-		
-		IJ.selectWindow("Log");
-		IJ.run("Close");
-		//init result of morph ops
-		ImagePlus check = new ImagePlus("Particles",finim);
-		//detect particles
+		//detect particles in threshold resultß
 		int opts =  ParticleAnalyzer.SHOW_RESULTS | ParticleAnalyzer.EXCLUDE_EDGE_PARTICLES | ParticleAnalyzer.CLEAR_WORKSHEET;
 		int measurements = ParticleAnalyzer.AREA | ParticleAnalyzer.CENTROID | ParticleAnalyzer.SHAPE_DESCRIPTORS | ParticleAnalyzer.MEAN | ParticleAnalyzer.PERIMETER;
 		ParticleAnalyzer analyzer = new ParticleAnalyzer(opts, measurements, ResultsTable.getResultsTable(), 0,400,0.4,1.0);
-		analyzer.analyze(check);
+		analyzer.analyze(nirPlus);
 //		IJ.run(check,"Analyze Particles...", "size=0-400 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
 
 	
@@ -244,7 +182,7 @@ public class Spandex_Stack implements PlugIn {
 		if(xCol==ResultsTable.COLUMN_NOT_FOUND){
 			foundParticle=false;
 			IJ.error("No particle is found");
-			return nirdisp;
+			return nirDisp;
 		}
 
 		int yCol =  resultsTable.getColumnIndex("Y");
@@ -259,7 +197,7 @@ public class Spandex_Stack implements PlugIn {
 			IJ.selectWindow("Results");
 			IJ.run("Close");
 		}
-		return nirdisp;
+		return nirDisp;
 	}
 
 	private void filterKeyPoints(){
@@ -289,65 +227,6 @@ public class Spandex_Stack implements PlugIn {
 		}
 	}
 
-	private ImagePlus Bernsen(ImagePlus imp, int radius,  double par1, double par2, boolean doIwhite ) {
-        //adaptive local thresholding method taken from IJ's adaptive thresholding plugin to make setting options easier
-		ImagePlus Maximp, Minimp;
-		ImageProcessor ip=imp.getProcessor(), ipMax, ipMin;
-		int contrast_threshold=15;
-		int local_contrast;
-		int mid_gray;
-		byte object;
-		byte backg;
-		int temp;
-		
-		//int [] data = (ip.getHistogram());
-
-		IJ.showStatus("Thresholding...");
-		//1 Do it
-		if (imp.getStackSize()==1){
-			    ip.snapshot();
-			    Undo.setup(Undo.FILTER, imp);
-		}
-		if (par1!=0) {
-			IJ.log("Bernsen: changed contrast_threshold from :"+ contrast_threshold + "  to:" + par1);
-			contrast_threshold= (int) par1;
-		}
-
-		if (doIwhite){
-			object =  (byte) 0xff;
-			backg =   (byte) 0;
-		}
-		else {
-			object =  (byte) 0;
-			backg =  (byte) 0xff;
-		}
-		ImagePlus implus = new ImagePlus("",ip);
-		Maximp=implus.duplicate();
-		ipMax=Maximp.getProcessor();
-		RankFilters rf=new RankFilters();
-		rf.rank(ipMax, radius, RankFilters.MAX);// Maximum
-		//Maximp.show();
-		ImagePlus implus1 = new ImagePlus("",ip);
-		Minimp=implus1.duplicate();
-		ipMin=Minimp.getProcessor();
-		rf.rank(ipMin, radius, RankFilters.MIN); //Minimum
-		//Minimp.show();
-		byte[] pixels = (byte [])ip.getPixels();
-		byte[] max = (byte [])ipMax.getPixels();
-		byte[] min = (byte [])ipMin.getPixels();
-
-		for (int i=0; i<pixels.length; i++) {
-			local_contrast = (int)((max[i]&0xff) -(min[i]&0xff));
-			mid_gray =(int) ((min[i]&0xff) + (max[i]&0xff) )/ 2;
-			temp=(int) (pixels[i] & 0x0000ff);
-			if ( local_contrast < contrast_threshold )
-				pixels[i] = ( mid_gray >= 128 ) ? object :  backg;  //Low contrast region
-			else
-				pixels[i] = (temp >= mid_gray ) ? object : backg;
-		}    
-		//imp.updateAndDraw();
-		return imp;
-	}
 
 	private void displayResults(){
 		int nParticles = xPosFiltered.size();
