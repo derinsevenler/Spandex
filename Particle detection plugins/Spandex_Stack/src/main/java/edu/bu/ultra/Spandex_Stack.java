@@ -11,6 +11,7 @@ import edu.emory.mathcs.restoretools.iterative.mrnsd.MRNSDDoubleIterativeDeconvo
 import edu.emory.mathcs.restoretools.iterative.mrnsd.MRNSDOptions;
 
 import ij.IJ;
+import ij.ImageJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.Undo;
@@ -67,18 +68,11 @@ public class Spandex_Stack implements PlugIn {
 			imHeight = rawImgPlus.getHeight();
 			zSize = rawImgPlus.getNSlices();
 
-			psfPath = IJ.getFilePath("Choose PSF File:");
-			psf = IJ.openImage(psfPath);
-			psfArr = new ImagePlus[1][1];
-			psfArr[0][0] = psf;
-
 			nirImagePlus = performPreProcessing();
 
 			displayImage = findKeyPoints(nirImagePlus.getStack());
-			if(foundParticle){
-				filterKeyPoints();
-				displayResults();
-			}
+			filterKeyPoints();
+			displayResults();
 		}
 	}
 
@@ -165,15 +159,18 @@ public class Spandex_Stack implements PlugIn {
 
 		// apply brightness threshold threshold
 		ImagePlus nirDisp = nirPlus.duplicate(); 
-		IJ.setThreshold(nirPlus, contrastThreshold, nirPlus.getProcessor().getMax());
+		IJ.setThreshold(nirPlus, contrastThreshold/100.0, 1);
+		IJ.run(nirPlus,"Make Binary","");
+		if (showIntermediateImages){
+			ImagePlus binaryImp= nirPlus.duplicate();
+			binaryImp.show();
+		}
 		
-		//detect particles in threshold resultß
+		//detect particles in threshold results
 		int opts =  ParticleAnalyzer.SHOW_RESULTS | ParticleAnalyzer.EXCLUDE_EDGE_PARTICLES | ParticleAnalyzer.CLEAR_WORKSHEET;
 		int measurements = ParticleAnalyzer.AREA | ParticleAnalyzer.CENTROID | ParticleAnalyzer.SHAPE_DESCRIPTORS | ParticleAnalyzer.MEAN | ParticleAnalyzer.PERIMETER;
-		ParticleAnalyzer analyzer = new ParticleAnalyzer(opts, measurements, ResultsTable.getResultsTable(), 0,400,0.4,1.0);
+		ParticleAnalyzer analyzer = new ParticleAnalyzer(opts, measurements, ResultsTable.getResultsTable(), 0,10000,0.4,1.0);
 		analyzer.analyze(nirPlus);
-//		IJ.run(check,"Analyze Particles...", "size=0-400 circularity=0.40-1.00 show=[Overlay Outlines] display exclude clear record add in_situ");
-
 	
 		ResultsTable resultsTable = ResultsTable.getResultsTable();
 		
@@ -181,7 +178,6 @@ public class Spandex_Stack implements PlugIn {
 		int xCol = resultsTable.getColumnIndex("X");
 		if(xCol==ResultsTable.COLUMN_NOT_FOUND){
 			foundParticle=false;
-			IJ.error("No particle is found");
 			return nirDisp;
 		}
 
@@ -211,24 +207,27 @@ public class Spandex_Stack implements PlugIn {
 		circularities = new ArrayList<Double>();
 		perimeters = new ArrayList<Double>();
 		
-		for (int n = 0; n<xPos.length; n++){
-			xPosFiltered.add(xPos[n]);
-			yPosFiltered.add(yPos[n]);
-			
-			double myNir = nirPlusOrig.getProcessor().getInterpolatedPixel(xPos[n], yPos[n]);
-			particleNir.add(myNir);
-			
-			double myPps = pps.getInterpolatedPixel(xPos[n], yPos[n]);
-			particlePps.add(myPps);
-			
-			particleAreas.add(area[n]);
-			circularities.add(circularity[n]);
-			perimeters.add(perimeter[n]);
+		if (foundParticle){
+			for (int n = 0; n<xPos.length; n++){
+				xPosFiltered.add(xPos[n]);
+				yPosFiltered.add(yPos[n]);
+				
+				double myNir = nirPlusOrig.getProcessor().getInterpolatedPixel(xPos[n], yPos[n]);
+				particleNir.add(myNir);
+				
+				double myPps = pps.getInterpolatedPixel(xPos[n], yPos[n]);
+				particlePps.add(myPps);
+				
+				particleAreas.add(area[n]);
+				circularities.add(circularity[n]);
+				perimeters.add(perimeter[n]);
+			}
 		}
 	}
 
 
 	private void displayResults(){
+		System.out.println("Displaying results!");
 		int nParticles = xPosFiltered.size();
 		// Create an overlay to show particles
 		Overlay particleOverlay = new Overlay();
@@ -279,5 +278,4 @@ public class Spandex_Stack implements PlugIn {
 			" developed at Boston University for Single Particle Interferometric Reflectance Imaging Sensing (SP-IRIS)"
 		);
 	}
-
 }
